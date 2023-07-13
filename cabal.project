@@ -1,0 +1,7 @@
+packages: ./*.cabal
+with-compiler: ghc-9.2.8
+
+source-repository-package
+    type: git
+    location: https://github.com/mainland/cyclotomic
+    tag: d84ed429f5c7c0ecfd0717c288dcbbee5dad226d
