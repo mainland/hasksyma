@@ -19,14 +19,16 @@ module Hasksyma.Const (
 import Data.Complex ( Complex(..) )
 import IHaskell.Display ( IHaskellDisplay(..) )
 import Test.QuickCheck ( Arbitrary(arbitrary), oneof )
-import Text.PrettyPrint.Mainland ( (<+>), parensIf, text )
+import Text.LaTeX.Base.Class ( commS )
+import Text.PrettyPrint.Mainland ( (<+>), char, parensIf, text )
 import Text.PrettyPrint.Mainland.Class ( Pretty(pprPrec) )
 
 import Hasksyma.LaTeX ( displayMath, PrettyTeX(tppr) )
-import Hasksyma.Pretty ( appPrec, appPrec1 )
+import Hasksyma.Pretty ( appPrec, appPrec1, mulPrec, mulPrec1 )
 
 data Const a where
     Const     :: a -> Const a
+    Pi        :: Floating a => Rational -> Const a
     IntegerC  :: Num a => Integer -> Const a
     RationalC :: Fractional a => Rational -> Const a
 
@@ -43,6 +45,7 @@ class IsConst a where
 
 -- | Return 'True' if constant is exact
 isExact :: Const a -> Bool
+isExact Pi{}        = True
 isExact IntegerC{}  = True
 isExact RationalC{} = True
 isExact _           = False
@@ -90,16 +93,19 @@ instance IsConst Integer where
 
 instance IsConst Float where
     fromConst (Const x)     = x
+    fromConst (Pi k)        = fromRational k * pi
     fromConst (IntegerC x)  = fromInteger x
     fromConst (RationalC x) = fromRational x
 
 instance IsConst Double where
     fromConst (Const x)     = x
+    fromConst (Pi k)        = fromRational k * pi
     fromConst (IntegerC x)  = fromInteger x
     fromConst (RationalC x) = fromRational x
 
 instance IsConst Rational where
     fromConst (Const x)     = x
+    fromConst (Pi k)        = fromRational k * pi
     fromConst (IntegerC x)  = fromInteger x
     fromConst (RationalC x) = x
 
@@ -107,6 +113,7 @@ instance IsConst Rational where
 
 instance RealFloat a => IsConst (Complex a) where
     fromConst (Const x)     = x
+    fromConst (Pi k)        = fromRational k * pi
     fromConst (IntegerC x)  = fromInteger x
     fromConst (RationalC x) = fromRational x
 
@@ -118,6 +125,7 @@ liftNum :: (IsConst b, Num b)
 liftNum f (Const x)     = Const (f x)
 liftNum f (IntegerC x)  = IntegerC (f x)
 liftNum f (RationalC x) = RationalC (f x)
+liftNum f x             = toConst (f (fromConst x))
 
 -- | Lift a binary operation on @'Num'@ type class to the type @'Const' a@
 liftNum2 :: (IsConst b, Num b)
@@ -140,22 +148,32 @@ liftIntegral2 f (Const x) (Const y) = Const (f x y)
 liftIntegral2 f x          y        = joinWith (liftIntegral2 f) x y
 
 instance (IsConst a, Num a) => Num (Const a) where
-    x + y = liftNum2 (+) x y
+    Pi k1 + Pi k2 = Pi (k1 + k2)
+    x     + y     = liftNum2 (+) x y
 
-    x - y = liftNum2 (-) x y
+    Pi k1 - Pi k2 = Pi (k1 - k2)
+    x     - y     = liftNum2 (-) x y
 
-    x * y = liftNum2 (*) x y
+    Pi k1        * IntegerC k2  = Pi (k1 * fromInteger k2)
+    IntegerC k1  * Pi k2        = Pi (fromInteger k1 * k2)
+    Pi k1        * RationalC k2 = Pi (k1 * k2)
+    RationalC k1 * Pi k2        = Pi (k1 * k2)
+    x            * y            = liftNum2 (*) x y
 
-    negate x = liftNum negate x
+    negate (Pi k) = Pi (negate k)
+    negate x      = liftNum negate x
 
-    abs x = liftNum abs x
+    abs (Pi k) = Pi (abs k)
+    abs x      = liftNum abs x
 
-    signum = liftNum signum
+    signum (Pi k) = RationalC (signum k)
+    signum x      = liftNum signum x
 
     fromInteger x = IntegerC x
 
 instance (IsConst a, Real a) => Real (Const a) where
     toRational (Const x)     = toRational x
+    toRational Pi{}          = error "can't happen"
     toRational (IntegerC x)  = fromInteger x
     toRational (RationalC x) = x
 
@@ -163,6 +181,7 @@ instance Enum a => Enum (Const a) where
     toEnum x = Const (toEnum x)
 
     fromEnum (Const x)     = fromEnum x
+    fromEnum Pi{}          = error "can't happen"
     fromEnum (IntegerC x)  = fromEnum x
     fromEnum (RationalC x) = fromEnum x
 
@@ -177,6 +196,7 @@ instance (IsConst a, Integral a) => Integral (Const a) where
     x `divMod` y = (x `div` y, x `mod` y)
 
     toInteger (Const x)    = toInteger x
+    toInteger Pi{}         = error "can't happen"
     toInteger (IntegerC x) = x
     toInteger RationalC{}  = error "can't happen"
 
@@ -188,6 +208,7 @@ liftFractional :: (IsConst b, Fractional b)
 liftFractional f (Const x)     = Const (f x)
 liftFractional f (IntegerC x)  = RationalC (f (fromInteger x))
 liftFractional f (RationalC x) = RationalC (f x)
+liftFractional f x             = toConst (f (fromConst x))
 
 -- | Lift a binary operation on 'Num' to the type 'Const a'
 liftFractional2 :: (IsConst b, Fractional b)
@@ -201,7 +222,9 @@ liftFractional2 f (RationalC x) (RationalC y) = RationalC (f x y)
 liftFractional2 f x             y             = joinWith (liftFractional2 f) x y
 
 instance (IsConst a, Fractional a) => Fractional (Const a) where
-    x / y = liftFractional2 (/) x y
+    Pi x / IntegerC y  = Pi (x / fromInteger y)
+    Pi x / RationalC y = Pi (x / y)
+    x    / y           = liftFractional2 (/) x y
 
     recip  = liftFractional recip
 
@@ -223,7 +246,7 @@ liftFloating2 f (Const x) (Const y) = Const (f x y)
 liftFloating2 f x         y         = toConst (f (fromConst x) (fromConst y))
 
 instance Floating (Const Float) where
-    pi = pi
+    pi = Pi 1
 
     exp  = liftFloating exp
     log  = liftFloating log
@@ -250,7 +273,7 @@ instance Floating (Const Float) where
     atanh = liftFloating atanh
 
 instance Floating (Const Double) where
-    pi = pi
+    pi = Pi 1
 
     exp  = liftFloating exp
     log  = liftFloating log
@@ -277,7 +300,7 @@ instance Floating (Const Double) where
     atanh = liftFloating atanh
 
 instance RealFloat a => Floating (Const (Complex a)) where
-    pi = pi
+    pi = Pi 1
 
     exp  = liftFloating exp
     log  = liftFloating log
@@ -307,28 +330,54 @@ instance Arbitrary (Const Integer) where
     arbitrary = oneof [Const <$> arbitrary, IntegerC <$> arbitrary]
 
 instance Arbitrary (Const Rational) where
-    arbitrary = oneof [Const <$> arbitrary, IntegerC <$> arbitrary, RationalC <$> arbitrary]
+    arbitrary = oneof [ Const <$> arbitrary
+                      , IntegerC <$> arbitrary
+                      , RationalC <$> arbitrary
+                      ]
 
 instance Arbitrary (Const Float) where
-    arbitrary = oneof [Const <$> arbitrary, IntegerC <$> arbitrary, RationalC <$> arbitrary]
+    arbitrary = oneof [ Const <$> arbitrary
+                      , Pi <$> arbitrary
+                      , IntegerC <$> arbitrary
+                      , RationalC <$> arbitrary
+                      ]
 
 instance Arbitrary (Const Double) where
-    arbitrary = oneof [Const <$> arbitrary, IntegerC <$> arbitrary, RationalC <$> arbitrary]
+    arbitrary = oneof [ Const <$> arbitrary
+                      , Pi <$> arbitrary
+                      , IntegerC <$> arbitrary
+                      , RationalC <$> arbitrary
+                      ]
 
 instance Arbitrary (Const (Complex Float)) where
-    arbitrary = oneof [Const <$> arbitrary, IntegerC <$> arbitrary, RationalC <$> arbitrary]
+    arbitrary = oneof [ Const <$> arbitrary
+                      , Pi <$> arbitrary
+                      , IntegerC <$> arbitrary
+                      , RationalC <$> arbitrary
+                      ]
 
 instance Arbitrary (Const (Complex Double)) where
-    arbitrary = oneof [Const <$> arbitrary, IntegerC <$> arbitrary, RationalC <$> arbitrary]
+    arbitrary = oneof [ Const <$> arbitrary
+                      , Pi <$> arbitrary
+                      , IntegerC <$> arbitrary
+                      , RationalC <$> arbitrary
+                      ]
 
 instance Pretty a => Pretty (Const a) where
     pprPrec p (Const x)     = pprPrec p x
+    pprPrec p (Pi 0)        = pprPrec p (0 :: Integer)
+    pprPrec _ (Pi 1)        = text "pi"
+    pprPrec p (Pi k)        = parensIf (p > mulPrec) $
+                              pprPrec mulPrec1 k <> char '*' <> text "pi"
     pprPrec p (IntegerC x)  = pprPrec p x
     pprPrec p (RationalC x) = parensIf (p > appPrec) $
                               text "fromRational" <+> pprPrec appPrec1 x
 
 instance PrettyTeX a => PrettyTeX (Const a) where
     tppr (Const x)     = tppr x
+    tppr (Pi 0)        = tppr (0 :: Integer)
+    tppr (Pi 1)        = commS "pi"
+    tppr (Pi k)        = tppr k <> commS "pi"
     tppr (IntegerC x)  = tppr x
     tppr (RationalC x) = tppr x
 
