@@ -18,6 +18,7 @@ import Hasksyma.Const
 import Test.Const
 import Test.Eval
 import Test.Exact
+import Test.Simplify
 
 main :: IO ()
 main = hspec spec
@@ -27,3 +28,4 @@ spec = do
     constTests
     exactConstTests
     evalTests
+    simplifyTests
