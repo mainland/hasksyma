@@ -18,8 +18,8 @@ module Hasksyma.Const (
 
 import Data.Complex ( Complex(..) )
 import IHaskell.Display ( IHaskellDisplay(..) )
-import Test.QuickCheck ( Arbitrary(arbitrary), oneof )
-import Text.LaTeX.Base.Class ( commS )
+import Test.QuickCheck ( Arbitrary(arbitrary), frequency, oneof )
+import Text.LaTeX.Base.Class ( comm1, commS )
 import Text.PrettyPrint.Mainland ( (<+>), char, parensIf, text )
 import Text.PrettyPrint.Mainland.Class ( Pretty(pprPrec) )
 
@@ -29,6 +29,7 @@ import Hasksyma.Pretty ( appPrec, appPrec1, mulPrec, mulPrec1 )
 data Const a where
     Const     :: a -> Const a
     Pi        :: Floating a => Rational -> Const a
+    E         :: Floating a => Const a
     IntegerC  :: Num a => Integer -> Const a
     RationalC :: Fractional a => Rational -> Const a
 
@@ -46,6 +47,7 @@ class IsConst a where
 -- | Return 'True' if constant is exact
 isExact :: Const a -> Bool
 isExact Pi{}        = True
+isExact E{}         = True
 isExact IntegerC{}  = True
 isExact RationalC{} = True
 isExact _           = False
@@ -94,18 +96,21 @@ instance IsConst Integer where
 instance IsConst Float where
     fromConst (Const x)     = x
     fromConst (Pi k)        = fromRational k * pi
+    fromConst E             = exp 1
     fromConst (IntegerC x)  = fromInteger x
     fromConst (RationalC x) = fromRational x
 
 instance IsConst Double where
     fromConst (Const x)     = x
     fromConst (Pi k)        = fromRational k * pi
+    fromConst E             = exp 1
     fromConst (IntegerC x)  = fromInteger x
     fromConst (RationalC x) = fromRational x
 
 instance IsConst Rational where
     fromConst (Const x)     = x
     fromConst (Pi k)        = fromRational k * pi
+    fromConst E             = exp 1
     fromConst (IntegerC x)  = fromInteger x
     fromConst (RationalC x) = x
 
@@ -114,6 +119,7 @@ instance IsConst Rational where
 instance RealFloat a => IsConst (Complex a) where
     fromConst (Const x)     = x
     fromConst (Pi k)        = fromRational k * pi
+    fromConst E             = exp 1
     fromConst (IntegerC x)  = fromInteger x
     fromConst (RationalC x) = fromRational x
 
@@ -174,6 +180,7 @@ instance (IsConst a, Num a) => Num (Const a) where
 instance (IsConst a, Real a) => Real (Const a) where
     toRational (Const x)     = toRational x
     toRational Pi{}          = error "can't happen"
+    toRational E{}           = error "can't happen"
     toRational (IntegerC x)  = fromInteger x
     toRational (RationalC x) = x
 
@@ -182,6 +189,7 @@ instance Enum a => Enum (Const a) where
 
     fromEnum (Const x)     = fromEnum x
     fromEnum Pi{}          = error "can't happen"
+    fromEnum E{}           = error "can't happen"
     fromEnum (IntegerC x)  = fromEnum x
     fromEnum (RationalC x) = fromEnum x
 
@@ -197,6 +205,7 @@ instance (IsConst a, Integral a) => Integral (Const a) where
 
     toInteger (Const x)    = toInteger x
     toInteger Pi{}         = error "can't happen"
+    toInteger E{}          = error "can't happen"
     toInteger (IntegerC x) = x
     toInteger RationalC{}  = error "can't happen"
 
@@ -248,8 +257,10 @@ liftFloating2 f x         y         = toConst (f (fromConst x) (fromConst y))
 instance Floating (Const Float) where
     pi = Pi 1
 
-    exp  = liftFloating exp
-    log  = liftFloating log
+    exp = liftFloating exp
+
+    log E = 1
+    log x = liftFloating log x
 
     sqrt = liftFloating sqrt
 
@@ -275,8 +286,10 @@ instance Floating (Const Float) where
 instance Floating (Const Double) where
     pi = Pi 1
 
-    exp  = liftFloating exp
-    log  = liftFloating log
+    exp = liftFloating exp
+
+    log E = 1
+    log x = liftFloating log x
 
     sqrt = liftFloating sqrt
 
@@ -302,8 +315,10 @@ instance Floating (Const Double) where
 instance RealFloat a => Floating (Const (Complex a)) where
     pi = Pi 1
 
-    exp  = liftFloating exp
-    log  = liftFloating log
+    exp = liftFloating exp
+
+    log E = 1
+    log x = liftFloating log x
 
     sqrt = liftFloating sqrt
 
@@ -336,32 +351,36 @@ instance Arbitrary (Const Rational) where
                       ]
 
 instance Arbitrary (Const Float) where
-    arbitrary = oneof [ Const <$> arbitrary
-                      , Pi <$> arbitrary
-                      , IntegerC <$> arbitrary
-                      , RationalC <$> arbitrary
-                      ]
+    arbitrary = frequency [ (10, Const <$> arbitrary)
+                          , (1, pure E)
+                          , (1, Pi <$> arbitrary)
+                          , (10, IntegerC <$> arbitrary)
+                          , (10, RationalC <$> arbitrary)
+                          ]
 
 instance Arbitrary (Const Double) where
-    arbitrary = oneof [ Const <$> arbitrary
-                      , Pi <$> arbitrary
-                      , IntegerC <$> arbitrary
-                      , RationalC <$> arbitrary
-                      ]
+    arbitrary = frequency [ (10, Const <$> arbitrary)
+                          , (1, pure E)
+                          , (1, Pi <$> arbitrary)
+                          , (10, IntegerC <$> arbitrary)
+                          , (10, RationalC <$> arbitrary)
+                          ]
 
 instance Arbitrary (Const (Complex Float)) where
-    arbitrary = oneof [ Const <$> arbitrary
-                      , Pi <$> arbitrary
-                      , IntegerC <$> arbitrary
-                      , RationalC <$> arbitrary
-                      ]
+    arbitrary = frequency [ (10, Const <$> arbitrary)
+                          , (1, pure E)
+                          , (1, Pi <$> arbitrary)
+                          , (10, IntegerC <$> arbitrary)
+                          , (10, RationalC <$> arbitrary)
+                          ]
 
 instance Arbitrary (Const (Complex Double)) where
-    arbitrary = oneof [ Const <$> arbitrary
-                      , Pi <$> arbitrary
-                      , IntegerC <$> arbitrary
-                      , RationalC <$> arbitrary
-                      ]
+    arbitrary = frequency [ (10, Const <$> arbitrary)
+                          , (1, pure E)
+                          , (1, Pi <$> arbitrary)
+                          , (10, IntegerC <$> arbitrary)
+                          , (10, RationalC <$> arbitrary)
+                          ]
 
 instance Pretty a => Pretty (Const a) where
     pprPrec p (Const x)     = pprPrec p x
@@ -369,6 +388,7 @@ instance Pretty a => Pretty (Const a) where
     pprPrec _ (Pi 1)        = text "pi"
     pprPrec p (Pi k)        = parensIf (p > mulPrec) $
                               pprPrec mulPrec1 k <> char '*' <> text "pi"
+    pprPrec _ E             = text "e"
     pprPrec p (IntegerC x)  = pprPrec p x
     pprPrec p (RationalC x) = parensIf (p > appPrec) $
                               text "fromRational" <+> pprPrec appPrec1 x
@@ -378,6 +398,7 @@ instance PrettyTeX a => PrettyTeX (Const a) where
     tppr (Pi 0)        = tppr (0 :: Integer)
     tppr (Pi 1)        = commS "pi"
     tppr (Pi k)        = tppr k <> commS "pi"
+    tppr E             = comm1 "mathrm" "e"
     tppr (IntegerC x)  = tppr x
     tppr (RationalC x) = tppr x
 
