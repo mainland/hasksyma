@@ -10,11 +10,15 @@
 
 module Hasksyma.LaTeX
     ( PrettyTeX(..),
+
       autoParensIf,
       mskip,
       mathbin,
       mathrel,
       nicefrac,
+
+      tinfixop,
+
       displayMath,
     ) where
 
@@ -54,7 +58,7 @@ import Text.LaTeX.Packages.AMSFonts ( mathfrak )
 import Text.PrettyPrint.Mainland ( strictText )
 import Text.PrettyPrint.Mainland.Class ( Pretty(ppr) )
 
-import Hasksyma.Pretty ( addPrec )
+import Hasksyma.Pretty ( Assoc(..), Fixity(..), addPrec )
 
 class PrettyTeX a where
     {-# MINIMAL tpprPrec | tppr #-}
@@ -191,6 +195,24 @@ instance PrettyTeX Cyclotomic where
 instance PrettyTeX RealCyclotomic where
     tpprPrec p (RealCyclotomic cyc) = tpprPrec p cyc
 #endif /* defined(CYCLOTOMIC) */
+
+-- | Pretty-print an infix operator.
+tinfixop :: (PrettyTeX a, PrettyTeX b)
+         => Int    -- ^ precedence of context
+         -> Fixity -- ^ Fixity of operator
+         -> LaTeX  -- ^ operator
+         -> a      -- ^ left argument
+         -> b      -- ^ right argument
+         -> LaTeX
+tinfixop prec (Fixity opAssoc opPrec) op l r =
+    autoParensIf (prec > opPrec) $
+    tpprPrec leftPrec l <> " " <> op <> " " <> tpprPrec rightPrec r
+  where
+    leftPrec | opAssoc == RightAssoc = opPrec + 1
+             | otherwise             = opPrec
+
+    rightPrec | opAssoc == LeftAssoc = opPrec + 1
+              | otherwise            = opPrec
 
 displayMath :: PrettyTeX a => a -> IO Display
 displayMath = display . IHaskell.Display.latex . T.unpack . render . math . tppr
