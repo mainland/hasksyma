@@ -17,6 +17,11 @@ description:
 
 build-type: Simple
 
+flag cyclotomic
+    description: Enable support for cyclotomic numbers
+    manual: True
+    default: False
+
 library
   default-language: Haskell2010
 
@@ -38,6 +43,10 @@ library
 
   ghc-options:
     -Wall
+
+  if flag(cyclotomic)
+    cpp-options: -DCYCLOTOMIC
+    build-depends: cyclotomic >= 1.1 && < 1.2
 
 test-suite full
   type: exitcode-stdio-1.0

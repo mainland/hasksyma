@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -18,7 +19,14 @@ module Hasksyma.LaTeX
     ) where
 
 import Data.Complex (Complex(..))
+#if defined(CYCLOTOMIC)
+import Data.Complex.Cyclotomic ( Cyclotomic(..) )
+#endif /* defined(CYCLOTOMIC) */
 import Data.List ( intersperse )
+#if defined(CYCLOTOMIC)
+import qualified Data.Map as Map
+import Data.Number.RealCyclotomic ( RealCyclotomic(..) )
+#endif /* defined(CYCLOTOMIC) */
 import Data.Ratio ( Ratio, numerator, denominator )
 import Data.Set ( Set )
 import qualified Data.Set as Set
@@ -27,6 +35,7 @@ import IHaskell.Display
     ( latex, Display, IHaskellDisplay(display) )
 import Text.LaTeX
     ( IsString(fromString),
+      LaTeX,
       (!:),
       (^:),
       autoBraces,
@@ -34,8 +43,12 @@ import Text.LaTeX
       autoSquareBrackets,
       math,
       showFloat,
-      Render(render),
-      LaTeX )
+      Render(render) )
+#if defined(CYCLOTOMIC)
+import Text.LaTeX
+    ( (!^),
+      zeta )
+#endif /* defined(CYCLOTOMIC) */
 import Text.LaTeX.Base.Class ( comm1, LaTeXC )
 import Text.LaTeX.Packages.AMSFonts ( mathfrak )
 import Text.PrettyPrint.Mainland ( strictText )
@@ -140,6 +153,44 @@ instance (Eq a, Num a, PrettyTeX a) => PrettyTeX (Complex a) where
                              case (T.unpack . render) (tpprIm i) of
                                '-' : _ -> tppr r <> tpprIm i
                                _       -> tppr r + tpprIm i
+
+#if defined(CYCLOTOMIC)
+instance PrettyTeX Cyclotomic where
+    tpprPrec p (Cyclotomic n0 mp) =
+        case Map.toList mp of
+            []          -> "0"
+            [(ex,rat)]  -> leadingTerm rat n0 ex
+            (ex,rat):xs -> autoParensIf (p > addPrec) $
+                           leadingTerm rat n0 ex <> mconcat (map (followingTerm n0) xs)
+      where
+        pprBaseExp :: Integer -> Integer -> LaTeX
+        pprBaseExp n 1  = zeta !: tppr n
+        pprBaseExp n ex = zeta !^ (tppr n, tppr ex)
+
+        leadingTerm :: Rational -> Integer -> Integer -> LaTeX
+        leadingTerm r _ 0 = tppr r
+        leadingTerm r n ex
+            | r == 1     = t
+            | r == (-1)  = "-" <> t
+            | r > 0      = tppr r <> t
+            | r < 0      = "-" <> tppr (-r) <> t
+            | otherwise  = mempty
+            where
+            t = pprBaseExp n ex
+
+        followingTerm :: Integer -> (Integer, Rational) -> LaTeX
+        followingTerm n (ex, r)
+            | r == 1     = "+" <> t
+            | r == (-1)  = "-" <> t
+            | r > 0      = "+" <> tppr r <> t
+            | r < 0      = "-" <> tppr (-r) <> t
+            | otherwise  = mempty
+            where
+            t = pprBaseExp n ex
+
+instance PrettyTeX RealCyclotomic where
+    tpprPrec p (RealCyclotomic cyc) = tpprPrec p cyc
+#endif /* defined(CYCLOTOMIC) */
 
 displayMath :: PrettyTeX a => a -> IO Display
 displayMath = display . IHaskell.Display.latex . T.unpack . render . math . tppr
