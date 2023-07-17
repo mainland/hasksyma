@@ -28,6 +28,7 @@ library
   exposed-modules:
     Hasksyma
     Hasksyma.Const
+    Hasksyma.Exp
     Hasksyma.LaTeX
     Hasksyma.Pretty
 
