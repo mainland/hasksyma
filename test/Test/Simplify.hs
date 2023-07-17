@@ -35,17 +35,30 @@ simplifyTests = describe "Simplification" $ do
     tensec :: Int
     tensec = 10 * 1000000
 
-norvigTests = describe "Simplification tests from PAIP 8.2" $ do
-    it "2 + 2 = 4" $
-      simplify (2 + 2 :: Exp Double) @?= 4
-    it "5 * 20 + 30 + 7 = 137" $
-      simplify (5 * 20 + 30 + 7 :: Exp Double) @?= 137
-    it "5 * x - (4 + 1) * x = 0" $
-      simplify (5 * x - (4 + 1) * x :: Exp Double) @?= 0
-    it "y / z * (5 * z - (4 + 1) * z) = 0" $
-      simplify (y / z * (5 * z - (4 + 1) * z) :: Exp Double) @?= 0
-    it "(4 - 3) * x + (y / y - 1) * z = x" $
-      simplify ((4 - 3) * x + (y / y - 1) * z :: Exp Double) @?= x
+norvigTests :: Spec
+norvigTests = do
+    describe "Simplification tests from PAIP 8.2" $ do
+        it "2 + 2 = 4" $
+          simplify (2 + 2 :: Exp Double) @?= 4
+        it "5 * 20 + 30 + 7 = 137" $
+          simplify (5 * 20 + 30 + 7 :: Exp Double) @?= 137
+        it "5 * x - (4 + 1) * x = 0" $
+          simplify (5 * x - (4 + 1) * x :: Exp Double) @?= 0
+        it "y / z * (5 * z - (4 + 1) * z) = 0" $
+          simplify (y / z * (5 * z - (4 + 1) * z) :: Exp Double) @?= 0
+        it "(4 - 3) * x + (y / y - 1) * z = x" $
+          simplify ((4 - 3) * x + (y / y - 1) * z :: Exp Double) @?= x
+    describe "Simplification tests from PAIP 8.3" $ do
+        it "3 * 2 * x = 6 * x" $
+          simplify (3 * 2 * x :: Exp Double) @?= 6 * x
+        it "2 * x * x * 3 = 6 * x^2" $
+          simplify (2 * x * x * 3 :: Exp Double) @?= 6 * IntPowE x 2
+        it "2 * x * 3 * y * 4 * z * 5 * 6 = 720 * (x * y * z)" $
+          simplify (2 * x * 3 * y * 4 * z * 5 * 6 :: Exp Double) @?= 720 * (x * y * z)
+        it "3 + x + 4 + x = 2*x + 7" $
+          simplify (3 + x + 4 + x :: Exp Double) @?= 2*x + 7
+        it "2 * x * 3 * x * 4 * (1 / x) * 5 * 6 = 720 * x" $
+          simplify (2 * x * 3 * x * 4 * ( 1 / x ) * 5 * 6 :: Exp Double) @?= 720 * x
   where
     x, y, z :: Exp a
     x = VarE "x"

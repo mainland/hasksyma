@@ -16,7 +16,7 @@ module Hasksyma.Simplify
     simp,
   ) where
 
-import Hasksyma.Const ( IsConst, Const(..) )
+import Hasksyma.Const ( IsConst, Const(..), isExact )
 import Hasksyma.Eval
     ( liftNum,
       liftNum2,
@@ -32,7 +32,9 @@ import Hasksyma.Exp
       FloatBinop(..),
       FracBinop(..),
       NumBinop(..),
-      NumUnop(..) )
+      NumUnop(..),
+
+      isConstE )
 
 -- | Fully simplify an expression.
 simplify :: (Eq a, Num a, IsConst a) => Exp a -> Exp a
@@ -156,6 +158,21 @@ simp (NumBinopE Add x y)
   | x == y  = 2 * x
   | y == -x = 0
 
+-- Make constant in addition the last term
+simp (NumBinopE Add n@ConstE{} x) | not (isConstE x) =
+    x + n
+
+simp (NumBinopE Add (NumBinopE Add x (ConstE n)) (ConstE m)) | isExact y =
+    x + ConstE y
+  where
+    y = n + m
+
+simp (NumBinopE Add x (NumBinopE Add y n@ConstE{})) =
+    (x + y) + n
+
+simp (NumBinopE Add (NumBinopE Add x n@ConstE{}) y) | not (isConstE y) =
+    (x + y) + n
+
 simp (NumBinopE Sub x y)
   | x == 0 = -y
   | y == 0 = x
@@ -168,14 +185,54 @@ simp (NumBinopE Mul x y)
   | y == 1    = x
   | x == y    = IntPowE x 2
 
+simp (NumBinopE Mul x (FracBinopE FDiv y x')) | x' == x =
+    y
+
+simp (NumBinopE Mul (FracBinopE FDiv y x) x') | x' == x =
+    y
+
+-- Make constant in multiplication the first term
+simp (NumBinopE Mul x n@ConstE{}) | not (isConstE x) =
+    n * x
+
+simp (NumBinopE Mul (ConstE n) (NumBinopE Mul (ConstE m) x)) | isExact y =
+    ConstE y * x
+  where
+    y = n * m
+
+simp (NumBinopE Mul (NumBinopE Mul n@ConstE{} x) y) =
+    n * (x * y)
+
+simp (NumBinopE Mul (IntPowE x n) (FracPowE y m)) =
+    NumBinopE Mul (FracPowE x n) (FracPowE y m)
+
+simp (NumBinopE Mul (FracPowE x n) (IntPowE y m)) =
+    NumBinopE Mul (FracPowE x n) (FracPowE y m)
+
+simp (NumBinopE Mul (FracPowE x n) (FracPowE x' m)) | x' == x =
+    FracPowE x (n + m)
+
+simp (IntPowE x 1) = x
+
 simp (IntPowE (ConstE x) n) = ConstE (x ^ n)
+
+simp (FracPowE x 1) = x
+
+simp (FracPowE (ConstE x) n) = ConstE (x ^^ n)
 
 simp (FracBinopE FDiv x y)
   | x == 0 && y == 0 = Undefined
   | x == 0           = 0
   | y == 0           = Infty
+  | x == 1           = FracPowE y (-1)
   | y == 1           = x
   | x == y           = 1
+
+simp (FracBinopE FDiv (NumBinopE Mul x y) x') | x' == x =
+    y
+
+simp (FracBinopE FDiv (NumBinopE Mul y x) x') | x' == x =
+    y
 
 simp (FloatBinopE Pow e (ConstE (IntegerC n))) = FracPowE e n
 
