@@ -77,33 +77,33 @@ prop_frac_equiv :: (IsConst a, Fractional a, Equiv a)
                 -> FracBinop -> Const a -> Const a -> Property
 prop_frac_equiv _ (FracBinop _ f p) x y = p x y ==> fromConst (f x y) `equiv` f (fromConst x) (fromConst y)
 
-data FloatUnop = FloatUnop String (forall a . Floating a => a -> a)
+data FloatUnop = FloatUnop String (forall a . Floating a => a -> a) (forall a . (Ord a, Floating a) => a -> Bool)
 
 instance Show FloatUnop where
-    show (FloatUnop op _) = op
+    show (FloatUnop op _ _) = op
 
 instance Arbitrary FloatUnop where
-    arbitrary = elements [ FloatUnop "exp" exp
-                         , FloatUnop "log" log
-                         , FloatUnop "sqrt" sqrt
-                         , FloatUnop "sin" sin
-                         , FloatUnop "cos" cos
-                         , FloatUnop "tan" tan
-                         , FloatUnop "asin" asin
-                         , FloatUnop "acos" acos
-                         , FloatUnop "atan" atan
-                         , FloatUnop "sinh" sinh
-                         , FloatUnop "cosh" cosh
-                         , FloatUnop "tanh" tanh
-                         , FloatUnop "asinh" asinh
-                         , FloatUnop "acosh" acosh
-                         , FloatUnop "atanh" atanh
+    arbitrary = elements [ FloatUnop "exp" exp (const True)
+                         , FloatUnop "log" log (const True)
+                         , FloatUnop "sqrt" sqrt (\x -> x >= 0)
+                         , FloatUnop "sin" sin (const True)
+                         , FloatUnop "cos" cos (const True)
+                         , FloatUnop "tan" tan (const True)
+                         , FloatUnop "asin" asin (const True)
+                         , FloatUnop "acos" acos (const True)
+                         , FloatUnop "atan" atan (const True)
+                         , FloatUnop "sinh" sinh (const True)
+                         , FloatUnop "cosh" cosh (const True)
+                         , FloatUnop "tanh" tanh (const True)
+                         , FloatUnop "asinh" asinh (const True)
+                         , FloatUnop "acosh" acosh (const True)
+                         , FloatUnop "atanh" atanh (const True)
                          ]
 
-prop_float_equiv :: (IsConst a, Floating a, Equiv a, Floating (Const a))
+prop_float_equiv :: (IsConst a, Floating a, Equiv a, Ord a, Floating (Const a))
                  => proxy a
                  -> FloatUnop -> Const a -> Property
-prop_float_equiv _ (FloatUnop _ f) x = fromConst (f x) `equiv` f (fromConst x)
+prop_float_equiv _ (FloatUnop _ f p ) x = p x ==> fromConst (f x) `equiv` f (fromConst x)
 
 data FloatBinop = FloatBinop String (forall a . Floating a => a -> a -> a) (forall a . (Ord a, Floating a) => a -> a -> Bool)
 
