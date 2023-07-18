@@ -16,6 +16,7 @@ import Test.QuickCheck
 import Hasksyma.Const
 
 import Test.Const
+import Test.Eval
 import Test.Exact
 
 main :: IO ()
@@ -25,3 +26,4 @@ spec :: Spec
 spec = do
     constTests
     exactConstTests
+    evalTests

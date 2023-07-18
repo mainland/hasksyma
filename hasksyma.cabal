@@ -28,6 +28,7 @@ library
   exposed-modules:
     Hasksyma
     Hasksyma.Const
+    Hasksyma.Eval
     Hasksyma.Exp
     Hasksyma.LaTeX
     Hasksyma.Pretty
@@ -58,6 +59,7 @@ test-suite full
 
   other-modules:
     Test.Const
+    Test.Eval
     Test.Exact
 
   build-depends:
