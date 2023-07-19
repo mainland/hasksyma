@@ -23,7 +23,8 @@ module Hasksyma.Exp (
   FracBinop(..),
   FloatBinop(..),
 
-  isConstE
+  isConstE,
+  isExactE
 ) where
 
 import Data.Symbol ( unintern, Symbol )
@@ -35,7 +36,7 @@ import Text.LaTeX.Base.Math ( frac )
 import Text.PrettyPrint.Mainland ( Doc, (<+>), (<+/>), char, parensIf, text)
 import Text.PrettyPrint.Mainland.Class ( Pretty(pprPrec, ppr) )
 
-import Hasksyma.Const ( IsConst, Const )
+import Hasksyma.Const ( IsConst, Const, isExact )
 import Hasksyma.LaTeX
     ( PrettyTeX(tpprPrec, tppr),
       autoParensIf,
@@ -134,6 +135,23 @@ data Exp a where
 isConstE :: Exp a -> Bool
 isConstE ConstE{} = True
 isConstE _        = False
+
+-- | Return 'True' if expression is exact
+isExactE :: Exp a -> Bool
+isExactE Undefined{}           = True
+isExactE Infty{}               = True
+isExactE NegInfty{}            = True
+isExactE (ConstE c)            = isExact c
+isExactE VarE{}                = True
+isExactE (NumUnopE _ e)        = isExactE e
+isExactE (FracUnopE _ e)       = isExactE e
+isExactE (FloatUnopE _ e)      = isExactE e
+isExactE (NumBinopE _ e1 e2)   = isExactE e1 && isExactE e2
+isExactE (IntPowE e _)         = isExactE e
+isExactE (FracPowE e _)        = isExactE e
+isExactE (IntBinopE _ e1 e2)   = isExactE e1 && isExactE e2
+isExactE (FracBinopE _ e1 e2)  = isExactE e1 && isExactE e2
+isExactE (FloatBinopE _ e1 e2) = isExactE e1 && isExactE e2
 
 deriving instance Show a => Show (Exp a)
 deriving instance (Eq a, IsConst a) => Eq (Exp a)
