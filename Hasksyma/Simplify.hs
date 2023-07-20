@@ -39,9 +39,7 @@ import Hasksyma.Exp
       FracBinop(..),
       FracUnop(..),
       NumBinop(..),
-      NumUnop(..),
-
-      isConstE )
+      NumUnop(..))
 
 -- | Fully simplify an expression.
 simplify :: (Eq a, Num a, IsConst a) => Exp a -> Exp a
@@ -194,6 +192,42 @@ joinPowWith f (FloatPow e1 n) (IntPow e2 m)   = f (FloatPow e1 n) (FloatPow e2 (
 joinPowWith f (FracPow e1 n)  (FloatPow e2 m) = f (FloatPow e1 (fromInteger n)) (FloatPow e2 m)
 joinPowWith f (FloatPow e1 n) (FracPow e2 m)  = f (FloatPow e1 n) (FloatPow e2 (fromInteger m))
 
+sumbefore :: (Eq a, Num a, IsConst a) => Exp a -> Exp a -> Bool
+sumbefore ConstE{} ConstE{} = False
+sumbefore _        ConstE{} = True
+sumbefore (VarE x) (VarE y) = x < y
+
+sumbefore (NumBinopE Mul ConstE{} x) (NumBinopE Mul ConstE{} y) = x `sumbefore` y
+sumbefore (NumBinopE Mul ConstE{} x) y                          = x `sumbefore` y
+sumbefore x                          (NumBinopE Mul ConstE{} y) = x `sumbefore` y
+
+sumbefore (pow -> Just p1) (pow -> Just p2)
+    | base p1 == base p2 = joinPowWith go p1 p2
+    | otherwise          = base p1 `sumbefore` base p2
+  where
+    go (IntPow _ n)   (IntPow _ m)   = n < m
+    go (FracPow _ n)  (FracPow _ m)  = n < m
+    go (FloatPow _ n) (FloatPow _ m) = sumbefore n m
+    go _              _              = False
+
+sumbefore _ _ = False
+
+prodbefore :: (Eq a, Num a, IsConst a) => Exp a -> Exp a -> Bool
+prodbefore ConstE{} ConstE{} = False
+prodbefore ConstE{} _        = True
+prodbefore (VarE x) (VarE y) = x < y
+
+prodbefore (pow -> Just p1) (pow -> Just p2)
+    | base p1 == base p2 = joinPowWith go p1 p2
+    | otherwise          = base p1 `prodbefore` base p2
+  where
+    go (IntPow _ n)   (IntPow _ m)   = n < m
+    go (FracPow _ n)  (FracPow _ m)  = n < m
+    go (FloatPow _ n) (FloatPow _ m) = prodbefore n m
+    go _              _              = False
+
+prodbefore _ _ = False
+
 -- | One-step expression simplification.
 simp :: forall a . (Eq a, Num a, IsConst a) => Exp a -> Exp a
 simp (NumUnopE Neg (NumUnopE Neg x)) = x
@@ -204,20 +238,22 @@ simp (NumBinopE Add x y)
   | x == y  = 2 * x
   | y == -x = 0
 
--- Make constant in addition the last term
-simp (NumBinopE Add n@ConstE{} x) | not (isConstE x) =
-    x + n
+-- | Reorder terms in sum
+simp (NumBinopE Add x y) | y `sumbefore` x =
+    y + x
 
+simp (NumBinopE Add (NumBinopE Add x y) z) | z `sumbefore` y =
+    x + z + y
+
+-- Reassociate
+simp (NumBinopE Add x (NumBinopE Add y z)) =
+    x + y + z
+
+-- Combine constants
 simp (NumBinopE Add (NumBinopE Add x (ConstE n)) (ConstE m)) | isExact y =
     x + ConstE y
   where
     y = n + m
-
-simp (NumBinopE Add x (NumBinopE Add y n@ConstE{})) =
-    (x + y) + n
-
-simp (NumBinopE Add (NumBinopE Add x n@ConstE{}) y) | not (isConstE y) =
-    (x + y) + n
 
 simp (NumBinopE Sub x y)
   | x == 0 = -y
@@ -237,17 +273,16 @@ simp (NumBinopE Mul x (FracBinopE FDiv y x')) | x' == x =
 simp (NumBinopE Mul (FracBinopE FDiv y x) x') | x' == x =
     y
 
--- Make constant in multiplication the first term
-simp (NumBinopE Mul x n@ConstE{}) | not (isConstE x) =
-    n * x
+-- | Reorder terms in product
+simp (NumBinopE Mul x y) | y `prodbefore` x =
+    y * x
 
-simp (NumBinopE Mul (ConstE n) (NumBinopE Mul (ConstE m) x)) | isExact y =
-    ConstE y * x
-  where
-    y = n * m
+simp (NumBinopE Mul (NumBinopE Mul x y) z) | z `prodbefore` y =
+    x * z * y
 
-simp (NumBinopE Mul (NumBinopE Mul n@ConstE{} x) y) =
-    n * (x * y)
+-- Reassociate
+simp (NumBinopE Mul x (NumBinopE Mul y z)) =
+    x * y * z
 
 simp (FracBinopE FDiv x y)
   | x == 0 && y == 0 = Undefined
@@ -268,12 +303,10 @@ simp (NumBinopE Mul (FracPowE x n) y) | n < 0 =
     y / IntPowE x (-n)
 
 simp (NumBinopE Mul (pow -> Just p1) (pow -> Just p2)) | base p1 == base p2 =
-    joinPowWith go p1 p2
-  where
-    go (IntPow x n)   (IntPow _ m)   = IntPowE x (n + m)
-    go (FracPow x n)  (FracPow _ m)  = FracPowE x (n + m)
-    go (FloatPow x n) (FloatPow _ m) = FloatBinopE Pow x (n + m)
-    go _              _              = error "can't happen"
+    joinPowWith mulPowers p1 p2
+
+simp (NumBinopE Mul (NumBinopE Mul e (pow -> Just p1)) (pow -> Just p2)) | base p1 == base p2 =
+    NumBinopE Mul e $ joinPowWith mulPowers p1 p2
 
 simp (FracBinopE FDiv (pow -> Just p1) (pow -> Just p2)) | base p1 == base p2 =
     joinPowWith go p1 p2
@@ -372,3 +405,10 @@ simp (FloatBinopE op x y) = liftFloating2 op x y
 simp (FracBinopE op x y)  = liftFractional2 op x y
 
 simp e = e
+
+-- | Multiply exponents with equal bases
+mulPowers :: (Eq a, IsConst a) => Pow a -> Pow a -> Exp a
+mulPowers (IntPow x n)   (IntPow _ m)   = IntPowE x (n + m)
+mulPowers (FracPow x n)  (FracPow _ m)  = FracPowE x (n + m)
+mulPowers (FloatPow x n) (FloatPow _ m) = FloatBinopE Pow x (n + m)
+mulPowers _              _              = error "can't happen"
