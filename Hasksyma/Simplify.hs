@@ -326,6 +326,41 @@ simp (pow -> Just p) = go p
 
     go (FloatPow e1 e2) = liftFloating2 Pow e1 e2
 
+-- Simplify logs
+simp (FloatUnopE Log x)
+    | x == 1 = 0
+
+simp (FloatUnopE Log (pow -> Just p)) | base p == ConstE E = go p
+  where
+    go (IntPow _ n)   = fromInteger n
+    go (FracPow _ n)  = fromInteger n
+    go (FloatPow _ n) = n
+
+simp (FloatBinopE LogBase (ConstE E) x) =
+    log x
+
+simp (FloatBinopE LogBase _ x)
+    | x == 1 = 0
+
+simp (FloatBinopE LogBase b (pow -> Just p)) | base p == b = go p
+  where
+    go (IntPow _ n)   = fromInteger n
+    go (FracPow _ n)  = fromInteger n
+    go (FloatPow _ n) = n
+
+-- Combine logs
+simp (NumBinopE Add (FloatUnopE Log x) (FloatUnopE Log y)) =
+    FloatUnopE Log (x * y)
+
+simp (NumBinopE Add (FloatBinopE LogBase b x) (FloatBinopE LogBase b' y)) | b' == b =
+    FloatBinopE LogBase b (x * y)
+
+simp (NumBinopE Sub (FloatUnopE Log x) (FloatUnopE Log y)) =
+    FloatUnopE Log (x / y)
+
+simp (NumBinopE Sub (FloatBinopE LogBase b x) (FloatBinopE LogBase b' y)) | b' == b =
+    FloatBinopE LogBase b (x / y)
+
 simp (NumUnopE op x)      = liftNum op x
 simp (FracUnopE op x)     = liftFractional op x
 simp (FloatUnopE op x)    = liftFloating op x
