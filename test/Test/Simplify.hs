@@ -68,6 +68,7 @@ norvigTests = do
 pop_eval_simplify_equiv :: Double -> Int -> DExp -> Property
 pop_eval_simplify_equiv eps ms (DExp e) =
     counterexample (prettyCompact $ text "Expression:" <+> ppr e) $
+    counterexample ("Expression: " ++ show e) $
     within ms $
     counterexample (prettyCompact $ text "Simplified:" <+> ppr e') $
     counterexample (prettyCompact $ text "Simplified and evaluated:" <+> ppr e1) $
