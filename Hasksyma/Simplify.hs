@@ -193,9 +193,12 @@ joinPowWith f (FracPow e1 n)  (FloatPow e2 m) = f (FloatPow e1 (fromInteger n)) 
 joinPowWith f (FloatPow e1 n) (FracPow e2 m)  = f (FloatPow e1 n) (FloatPow e2 (fromInteger m))
 
 sumbefore :: (Eq a, Num a, IsConst a) => Exp a -> Exp a -> Bool
-sumbefore ConstE{} ConstE{} = False
-sumbefore _        ConstE{} = True
-sumbefore (VarE x) (VarE y) = x < y
+sumbefore ConstE{}           ConstE{}           = False
+sumbefore _                  ConstE{}           = True
+sumbefore (VarE x)           (VarE y)           = x < y
+sumbefore (NumUnopE op1 _)   (NumUnopE op2 _)   = op1 < op2
+sumbefore (FracUnopE op1 _)  (FracUnopE op2 _)  = op1 < op2
+sumbefore (FloatUnopE op1 _) (FloatUnopE op2 _) = op1 < op2
 
 sumbefore (NumBinopE Mul ConstE{} x) (NumBinopE Mul ConstE{} y) = x `sumbefore` y
 sumbefore (NumBinopE Mul ConstE{} x) y                          = x `sumbefore` y
@@ -213,9 +216,12 @@ sumbefore (pow -> Just p1) (pow -> Just p2)
 sumbefore _ _ = False
 
 prodbefore :: (Eq a, Num a, IsConst a) => Exp a -> Exp a -> Bool
-prodbefore ConstE{} ConstE{} = False
-prodbefore ConstE{} _        = True
-prodbefore (VarE x) (VarE y) = x < y
+prodbefore ConstE{}           ConstE{}           = False
+prodbefore ConstE{}           _                  = True
+prodbefore (VarE x)           (VarE y)           = x < y
+prodbefore (NumUnopE op1 _)   (NumUnopE op2 _)   = op1 < op2
+prodbefore (FracUnopE op1 _)  (FracUnopE op2 _)  = op1 < op2
+prodbefore (FloatUnopE op1 _) (FloatUnopE op2 _) = op1 < op2
 
 prodbefore (pow -> Just p1) (pow -> Just p2)
     | base p1 == base p2 = joinPowWith go p1 p2
