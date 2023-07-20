@@ -1,5 +1,8 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns #-}
 
 -- |
 -- Module      :  Hasksyma.Simplify
@@ -16,6 +19,8 @@ module Hasksyma.Simplify
     simp,
   ) where
 
+import Data.Ratio ( denominator, numerator )
+
 import Hasksyma.Const ( IsConst, Const(..), isExact )
 import Hasksyma.Eval
     ( liftNum,
@@ -30,7 +35,9 @@ import Hasksyma.Eval
 import Hasksyma.Exp
     ( Exp(..),
       FloatBinop(..),
+      FloatUnop(..),
       FracBinop(..),
+      FracUnop(..),
       NumBinop(..),
       NumUnop(..),
 
@@ -44,7 +51,7 @@ simplify e | e' == e   = e
     e' = mapExp simp e
 
 -- | Fully simplify an expression.
-simplify' :: (Eq a, IsConst a) => Exp a -> Exp a
+simplify' :: (Eq a, Num a, IsConst a) => Exp a -> Exp a
 simplify' e = fixExp simp e
 
 -- | Perform @n@ simplifcation steps on an expression.
@@ -148,8 +155,47 @@ fixExp f e@(FloatBinopE op x y)
     y' = fixExp f y
     e' = f (FloatBinopE op x' y')
 
+-- | A n expression consisting of exponentiation
+data Pow a where
+    IntPow   :: Num a => Exp a -> Integer -> Pow a
+    FracPow  :: Fractional a => Exp a -> Integer -> Pow a
+    FloatPow :: (Floating a, Floating (Const a)) => Exp a -> Exp a -> Pow a
+
+base :: Pow a -> Exp a
+base (IntPow e _)   = e
+base (FracPow e _)  = e
+base (FloatPow e _) = e
+
+pow :: (Eq a, Num a, IsConst a) => Exp a -> Maybe (Pow a)
+pow e@VarE{}               = Just (IntPow e 1)
+pow (IntPowE e n)          = Just (IntPow e n)
+pow (FracPowE e n)         = Just (FracPow e n)
+pow (FracUnopE Recip e)    = Just (FracPow e (-1))
+pow (FloatUnopE Exp n)     = Just (FloatPow (ConstE E) n)
+pow (FloatUnopE Sqrt e)    = Just (FloatPow e (1/2))
+pow (FloatBinopE Pow e n)  = Just (FloatPow e n)
+pow (FloatBinopE Root e n) = Just (FloatPow e (1/n))
+pow _                      = Nothing
+
+joinPowWith :: (Eq a, IsConst a)
+            => (Pow a -> Pow a -> b)
+            -> Pow a
+            -> Pow a
+            -> b
+joinPowWith f x@IntPow{}   y@IntPow{}   = f x y
+joinPowWith f x@FracPow{}  y@FracPow{}  = f x y
+joinPowWith f x@FloatPow{} y@FloatPow{} = f x y
+
+joinPowWith f (IntPow e1 n)   (FracPow e2 m)  = f (FracPow e1 n) (FracPow e2 m)
+joinPowWith f (FracPow e1 n)  (IntPow e2 m)   = f (FracPow e1 n) (FracPow e2 m)
+joinPowWith f (IntPow e1 n)   (FloatPow e2 m) = f (FloatPow e1 (fromInteger n)) (FloatPow e2 m)
+joinPowWith f (FloatPow e1 n) (IntPow e2 m)   = f (FloatPow e1 n) (FloatPow e2 (fromInteger m))
+
+joinPowWith f (FracPow e1 n)  (FloatPow e2 m) = f (FloatPow e1 (fromInteger n)) (FloatPow e2 m)
+joinPowWith f (FloatPow e1 n) (FracPow e2 m)  = f (FloatPow e1 n) (FloatPow e2 (fromInteger m))
+
 -- | One-step expression simplification.
-simp :: (Eq a, IsConst a) => Exp a -> Exp a
+simp :: forall a . (Eq a, Num a, IsConst a) => Exp a -> Exp a
 simp (NumUnopE Neg (NumUnopE Neg x)) = x
 
 simp (NumBinopE Add x y)
@@ -203,23 +249,6 @@ simp (NumBinopE Mul (ConstE n) (NumBinopE Mul (ConstE m) x)) | isExact y =
 simp (NumBinopE Mul (NumBinopE Mul n@ConstE{} x) y) =
     n * (x * y)
 
-simp (NumBinopE Mul (IntPowE x n) (FracPowE y m)) =
-    NumBinopE Mul (FracPowE x n) (FracPowE y m)
-
-simp (NumBinopE Mul (FracPowE x n) (IntPowE y m)) =
-    NumBinopE Mul (FracPowE x n) (FracPowE y m)
-
-simp (NumBinopE Mul (FracPowE x n) (FracPowE x' m)) | x' == x =
-    FracPowE x (n + m)
-
-simp (IntPowE x 1) = x
-
-simp (IntPowE (ConstE x) n) = ConstE (x ^ n)
-
-simp (FracPowE x 1) = x
-
-simp (FracPowE (ConstE x) n) = ConstE (x ^^ n)
-
 simp (FracBinopE FDiv x y)
   | x == 0 && y == 0 = Undefined
   | x == 0           = 0
@@ -234,14 +263,68 @@ simp (FracBinopE FDiv (NumBinopE Mul x y) x') | x' == x =
 simp (FracBinopE FDiv (NumBinopE Mul y x) x') | x' == x =
     y
 
-simp (FloatBinopE Pow e (ConstE (IntegerC n))) = FracPowE e n
+-- Simplify exponentiation
+simp (NumBinopE Mul (FracPowE x n) y) | n < 0 =
+    y / IntPowE x (-n)
 
-simp (FloatBinopE Pow x y)
-  | x == 0 && y == 0 = Undefined
-  | x == 0           = 0
-  | y == 0           = 1
-  | y == 1           = x
-  | y == -1          = FracBinopE FDiv 1 x
+simp (NumBinopE Mul (pow -> Just p1) (pow -> Just p2)) | base p1 == base p2 =
+    joinPowWith go p1 p2
+  where
+    go (IntPow x n)   (IntPow _ m)   = IntPowE x (n + m)
+    go (FracPow x n)  (FracPow _ m)  = FracPowE x (n + m)
+    go (FloatPow x n) (FloatPow _ m) = FloatBinopE Pow x (n + m)
+    go _              _              = error "can't happen"
+
+simp (FracBinopE FDiv (pow -> Just p1) (pow -> Just p2)) | base p1 == base p2 =
+    joinPowWith go p1 p2
+  where
+    go (IntPow x n)   (IntPow _ m)   = FracPowE x (n - m)
+    go (FracPow x n)  (FracPow _ m)  = FracPowE x (n - m)
+    go (FloatPow x n) (FloatPow _ m) = FloatBinopE Pow x (n - m)
+    go _              _              = error "can't happen"
+
+simp (pow -> Just p) = go p
+  where
+    go :: Pow a -> Exp a
+    go (IntPow x n)
+      | x == 0 && n == 0 = Undefined
+      | n == 0           = 1
+      | n == 1           = x
+
+    go (IntPow (pow -> Just p1) n) =
+        case p1 of
+          IntPow x m   -> IntPowE x (n*m)
+          FracPow x m  -> FracPowE x (n*m)
+          FloatPow x m -> FloatBinopE Pow x (fromInteger n*m)
+
+    go (IntPow x n) =
+        liftIntPow x n
+
+    go (FracPow x n)
+      | x == 0 && n == 0 = Undefined
+      | n == 0           = 1
+      | n == 1           = x
+      | n >= 0           = IntPowE x n
+
+    go (FracPow (pow -> Just p1) n) =
+        case p1 of
+          IntPow x m   -> FracPowE x (n*m)
+          FracPow x m  -> FracPowE x (n*m)
+          FloatPow x m -> FloatBinopE Pow x (fromInteger n*m)
+
+    go (FracPow x n) =
+        liftFracPow x n
+
+    go (FloatPow (ConstE E) (FloatUnopE Log x)) =
+        x
+
+    go (FloatPow x (ConstE (IntegerC n))) =
+        FracPowE x n
+
+    go (FloatPow x (ConstE (RationalC n)))
+        | denominator n == 1 = FracPowE x (numerator n)
+
+    go (FloatPow e1 e2) = liftFloating2 Pow e1 e2
 
 simp (NumUnopE op x)      = liftNum op x
 simp (FracUnopE op x)     = liftFractional op x
