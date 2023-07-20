@@ -128,6 +128,8 @@ eval (FracBinopE op e1 e2)   = case (eval e1, eval e2) of
 eval (FloatBinopE op e1 e2)  = case (eval e1, eval e2) of
                                  (ConstE x, ConstE y) -> ConstE $ floatbinop op x y
                                  (e1', e2')           -> FloatBinopE op e1' e2'
+eval e@DiffE{}               = e
+eval e@IntE{}                = e
 
 -- | Lift a 'NumUnop' operator to an @'Exp' a@, reducing constants when possible
 -- while preserving exactness.

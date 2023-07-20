@@ -32,7 +32,7 @@ import IHaskell.Display ( IHaskellDisplay(..) )
 import Text.LaTeX
     ( IsString(..), (!:), (^:), autoBrackets, operatorname, tsqrt )
 import Text.LaTeX.Base.Class ( braces, comm1, commS, LaTeXC )
-import Text.LaTeX.Base.Math ( frac )
+import Text.LaTeX.Base.Math ( frac, integral, integralFromTo )
 import Text.PrettyPrint.Mainland ( Doc, (<+>), (<+/>), char, parensIf, text)
 import Text.PrettyPrint.Mainland.Class ( Pretty(pprPrec, ppr) )
 
@@ -49,6 +49,8 @@ import Hasksyma.Pretty
       infixl_,
       infixr_,
       infixop,
+      addPrec,
+      addPrec1,
       negPrec,
       negPrec1,
       mulPrec,
@@ -130,6 +132,8 @@ data Exp a where
     IntBinopE   :: Integral a => IntBinop -> Exp a -> Exp a -> Exp a
     FracBinopE  :: Fractional a => FracBinop -> Exp a -> Exp a -> Exp a
     FloatBinopE :: (Floating a, Floating (Const a)) => FloatBinop -> Exp a -> Exp a -> Exp a
+    DiffE       :: (Floating a, Floating (Const a)) => Exp a -> Var -> Exp a
+    IntE        :: (Floating a, Floating (Const a)) => Maybe (Exp a, Exp a) -> Exp a -> Var -> Exp a
 
 -- | Return 'True' if expression is a constant
 isConstE :: Exp a -> Bool
@@ -138,20 +142,23 @@ isConstE _        = False
 
 -- | Return 'True' if expression is exact
 isExactE :: Exp a -> Bool
-isExactE Undefined{}           = True
-isExactE Infty{}               = True
-isExactE NegInfty{}            = True
-isExactE (ConstE c)            = isExact c
-isExactE VarE{}                = True
-isExactE (NumUnopE _ e)        = isExactE e
-isExactE (FracUnopE _ e)       = isExactE e
-isExactE (FloatUnopE _ e)      = isExactE e
-isExactE (NumBinopE _ e1 e2)   = isExactE e1 && isExactE e2
-isExactE (IntPowE e _)         = isExactE e
-isExactE (FracPowE e _)        = isExactE e
-isExactE (IntBinopE _ e1 e2)   = isExactE e1 && isExactE e2
-isExactE (FracBinopE _ e1 e2)  = isExactE e1 && isExactE e2
-isExactE (FloatBinopE _ e1 e2) = isExactE e1 && isExactE e2
+isExactE Undefined{}              = True
+isExactE Infty{}                  = True
+isExactE NegInfty{}               = True
+isExactE (ConstE c)               = isExact c
+isExactE VarE{}                   = True
+isExactE (NumUnopE _ e)           = isExactE e
+isExactE (FracUnopE _ e)          = isExactE e
+isExactE (FloatUnopE _ e)         = isExactE e
+isExactE (NumBinopE _ e1 e2)      = isExactE e1 && isExactE e2
+isExactE (IntPowE e _)            = isExactE e
+isExactE (FracPowE e _)           = isExactE e
+isExactE (IntBinopE _ e1 e2)      = isExactE e1 && isExactE e2
+isExactE (FracBinopE _ e1 e2)     = isExactE e1 && isExactE e2
+isExactE (FloatBinopE _ e1 e2)    = isExactE e1 && isExactE e2
+isExactE (DiffE e _)              = isExactE e
+isExactE (IntE Nothing e _)       = isExactE e
+isExactE (IntE (Just (l, u)) e _) = isExactE l && isExactE u && isExactE e
 
 deriving instance Show a => Show (Exp a)
 deriving instance (Eq a, IsConst a) => Eq (Exp a)
@@ -334,6 +341,18 @@ instance (Pretty a, Num a, IsConst a, Eq a) => Pretty (Exp a) where
     pprPrec p (FloatBinopE op e1 e2) =
         infixop p op e1 e2
 
+    pprPrec p (DiffE e x) =
+        parensIf (p > appPrec) $
+        text "diff" <+> pprPrec appPrec1 e <+> pprPrec appPrec1 x
+
+    pprPrec p (IntE Nothing e x) =
+        parensIf (p > appPrec) $
+        text "integrate" <+> pprPrec appPrec1 e <+> pprPrec appPrec1 x
+
+    pprPrec p (IntE (Just (l, u)) e x) =
+        parensIf (p > appPrec) $
+        text "dintegrate" <+> pprPrec appPrec1 l <+> pprPrec appPrec1 u <+> pprPrec appPrec1 e <+> pprPrec appPrec1 x
+
 instance (PrettyTeX a, Num a, Eq a, IsConst a) => PrettyTeX (Exp a) where
     tpprPrec _ Undefined  = commS "bot"
     tpprPrec _ Infty      = commS "infty"
@@ -433,6 +452,16 @@ instance (PrettyTeX a, Num a, Eq a, IsConst a) => PrettyTeX (Exp a) where
     tpprPrec p (FloatBinopE LogBase e1 e2) =
         autoParensIf (p > appPrec) $
         (commS "log" !: tppr e1) <> braces (tpprPrec appPrec1 e2)
+
+    tpprPrec p (DiffE e x) =
+        autoParensIf (p > addPrec) $
+        frac "d" ("d" <> tppr x) <> tpprPrec addPrec1 e
+
+    tpprPrec _ (IntE Nothing e x) =
+        integral <> tpprPrec addPrec1 e <> commS "," <> ("d" <> tppr x)
+
+    tpprPrec _ (IntE (Just (l, u)) e x) =
+        integralFromTo (tppr l) (tppr u) <> tpprPrec addPrec1 e <> commS "," <> ("d" <> tppr x)
 
 instance PrettyTeX (Exp a) => IHaskellDisplay (Exp a) where
     display = displayMath

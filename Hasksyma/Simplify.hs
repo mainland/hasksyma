@@ -62,20 +62,23 @@ simplifyn n e | e' == e   = e
 
 -- | Recursively apply a function to an expression and its sub-expressions.
 mapExp :: (Eq a, IsConst a) => (Exp a -> Exp a) -> Exp a -> Exp a
-mapExp _ e@Undefined{}        = e
-mapExp _ e@Infty{}            = e
-mapExp _ e@NegInfty{}         = e
-mapExp _ e@ConstE{}           = e
-mapExp _ e@VarE{}             = e
-mapExp f (NumUnopE op x)      = f (NumUnopE op (mapExp f x))
-mapExp f (FracUnopE op x)     = f (FracUnopE op (mapExp f x))
-mapExp f (FloatUnopE op x)    = f (FloatUnopE op (mapExp f x))
-mapExp f (NumBinopE op x y)   = f (NumBinopE op (mapExp f x) (mapExp f y))
-mapExp f (IntPowE x n)        = f (IntPowE (mapExp f x) n)
-mapExp f (FracPowE x n)       = f (FracPowE (mapExp f x) n)
-mapExp f (IntBinopE op x y)   = f (IntBinopE op (mapExp f x) (mapExp f y))
-mapExp f (FracBinopE op x y)  = f (FracBinopE op (mapExp f x) (mapExp f y))
-mapExp f (FloatBinopE op x y) = f (FloatBinopE op (mapExp f x) (mapExp f y))
+mapExp _ e@Undefined{}            = e
+mapExp _ e@Infty{}                = e
+mapExp _ e@NegInfty{}             = e
+mapExp _ e@ConstE{}               = e
+mapExp _ e@VarE{}                 = e
+mapExp f (NumUnopE op x)          = f (NumUnopE op (mapExp f x))
+mapExp f (FracUnopE op x)         = f (FracUnopE op (mapExp f x))
+mapExp f (FloatUnopE op x)        = f (FloatUnopE op (mapExp f x))
+mapExp f (NumBinopE op x y)       = f (NumBinopE op (mapExp f x) (mapExp f y))
+mapExp f (IntPowE x n)            = f (IntPowE (mapExp f x) n)
+mapExp f (FracPowE x n)           = f (FracPowE (mapExp f x) n)
+mapExp f (IntBinopE op x y)       = f (IntBinopE op (mapExp f x) (mapExp f y))
+mapExp f (FracBinopE op x y)      = f (FracBinopE op (mapExp f x) (mapExp f y))
+mapExp f (FloatBinopE op x y)     = f (FloatBinopE op (mapExp f x) (mapExp f y))
+mapExp f (DiffE x v)              = f (DiffE (mapExp f x) v)
+mapExp f (IntE Nothing x v)       = f (IntE Nothing (mapExp f x) v)
+mapExp f (IntE (Just (l, u)) x v) = f (IntE (Just (mapExp f l, mapExp f u)) (mapExp f x) v)
 
 -- | Recursively apply a function to an expression and its sub-expressions until
 -- reaching a fixed point.
@@ -152,6 +155,29 @@ fixExp f e@(FloatBinopE op x y)
     x' = fixExp f x
     y' = fixExp f y
     e' = f (FloatBinopE op x' y')
+
+fixExp f e@(DiffE x v)
+    | e' == e   = e
+    | otherwise = fixExp f e'
+  where
+    x' = fixExp f x
+    e' = f (DiffE x' v)
+
+fixExp f e@(IntE Nothing x v)
+    | e' == e   = e
+    | otherwise = fixExp f e'
+  where
+    x' = fixExp f x
+    e' = f (IntE Nothing x' v)
+
+fixExp f e@(IntE (Just (l, u)) x v)
+    | e' == e   = e
+    | otherwise = fixExp f e'
+  where
+    l' = fixExp f l
+    u' = fixExp f u
+    x' = fixExp f x
+    e' = f (IntE (Just (l', u')) x' v)
 
 -- | A n expression consisting of exponentiation
 data Pow a where
