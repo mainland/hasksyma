@@ -26,6 +26,7 @@ import Test.Eval
 simplifyTests :: Spec
 simplifyTests = describe "Simplification" $ do
     norvigTests
+    powTests
     it "Simplification evaluates all constants" $
         property $ forAllShrinkBlind arbitrary shrink $ pop_eval_simplify_equiv eps tensec
   where
@@ -61,6 +62,30 @@ norvigTests = do
           simplify (2 * x * 3 * x * 4 * ( 1 / x ) * 5 * 6 :: Exp Double) @?= 720 * x
   where
     x, y, z :: Exp a
+    x = VarE "x"
+    y = VarE "y"
+    z = VarE "z"
+
+powTests :: SpecWith ()
+powTests =
+    describe "exp/log/pow simplification" $ do
+        it "log (e ** x) = x" $
+          simplify (log (e ** x) :: Exp Double) @?= x
+        it "e ** log x = x" $
+          simplify (e ** log x :: Exp Double) @?= x
+        it "(x ** y) * (x ** z) = x ** (y + z)" $
+          simplify ((x ** y) * (x ** z) :: Exp Double) @?= x ** (y + z)
+        it "(x ** y) / (x ** z) = x ** (y - z)" $
+          simplify ((x ** y) / (x ** z) :: Exp Double) @?= x ** (y - z)
+        it "log x + log y = log (x*y)" $
+          simplify (log x + log y :: Exp Double) @?= log (x*y)
+        it "log x - log y = log (x/y)" $
+          simplify (log x - log y :: Exp Double) @?= log (x/y)
+        it "(sin x) ** 2 + (cos x) ** 2 = 1" $
+          simplify ((sin x) ** 2 + (cos x) ** 2 :: Exp Double) @?= 1
+  where
+    e, x, y, z :: Floating a => Exp a
+    e = ConstE E
     x = VarE "x"
     y = VarE "y"
     z = VarE "z"

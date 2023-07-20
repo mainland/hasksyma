@@ -365,6 +365,22 @@ simp (pow -> Just p) = go p
 
     go (FloatPow e1 e2) = liftFloating2 Pow e1 e2
 
+-- Trigonometric simplification
+simp (FloatUnopE Sin n) | n == 0 = 0
+
+simp (FloatUnopE Sin (ConstE (Pi k)))
+    | k == 1   = 0
+    | k == 1/2 = 1
+
+simp (FloatUnopE Cos n) | n == 0 = 1
+
+simp (FloatUnopE Cos (ConstE (Pi k)))
+    | k == 1   = -1
+    | k == 1/2 = 0
+
+simp (NumBinopE Add (IntPowE (FloatUnopE Sin x) 2) (IntPowE (FloatUnopE Cos x') 2)) | x' == x =
+    1
+
 -- Simplify logs
 simp (FloatUnopE Log x)
     | x == 1 = 0
