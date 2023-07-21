@@ -26,6 +26,7 @@ import Test.Eval
 simplifyTests :: Spec
 simplifyTests = describe "Simplification" $ do
     norvigTests
+    prodTests
     powTests
     it "Simplification evaluates all constants" $
         property $ forAllShrinkBlind arbitrary shrink $ pop_eval_simplify_equiv eps tensec
@@ -65,6 +66,22 @@ norvigTests = do
     x = VarE "x"
     y = VarE "y"
     z = VarE "z"
+
+prodTests :: SpecWith ()
+prodTests =
+    describe "product simplification" $ do
+        it "x*(y/x) = y" $
+          simplify (x*(y/x) :: Exp Double) @?= y
+        it "(y/x)*x = y" $
+          simplify ((y/x)*x :: Exp Double) @?= y
+        it "(x*y)/x = y" $
+          simplify ((x*y)/x :: Exp Double) @?= y
+        it "(y*x)/x = y" $
+          simplify ((y*x)/x :: Exp Double) @?= y
+  where
+    x, y :: Floating a => Exp a
+    x = VarE "x"
+    y = VarE "y"
 
 powTests :: SpecWith ()
 powTests =

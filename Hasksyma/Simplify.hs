@@ -264,28 +264,13 @@ prodbefore _ _ = False
 simp :: forall a . (Eq a, Num a, IsConst a) => Exp a -> Exp a
 simp (NumUnopE Neg (NumUnopE Neg x)) = x
 
+simp (FracUnopE Recip (FracUnopE Recip x)) = x
+
 simp (NumBinopE Add x y)
   | x == 0  = y
   | y == 0  = x
   | x == y  = 2 * x
   | y == -x = 0
-
--- | Reorder terms in sum
-simp (NumBinopE Add x y) | y `sumbefore` x =
-    y + x
-
-simp (NumBinopE Add (NumBinopE Add x y) z) | z `sumbefore` y =
-    x + z + y
-
--- Reassociate
-simp (NumBinopE Add x (NumBinopE Add y z)) =
-    x + y + z
-
--- Combine constants
-simp (NumBinopE Add (NumBinopE Add x (ConstE n)) (ConstE m)) | isExact y =
-    x + ConstE y
-  where
-    y = n + m
 
 simp (NumBinopE Sub x y)
   | x == 0 = -y
@@ -299,23 +284,6 @@ simp (NumBinopE Mul x y)
   | y == 1    = x
   | x == y    = IntPowE x 2
 
-simp (NumBinopE Mul x (FracBinopE FDiv y x')) | x' == x =
-    y
-
-simp (NumBinopE Mul (FracBinopE FDiv y x) x') | x' == x =
-    y
-
--- | Reorder terms in product
-simp (NumBinopE Mul x y) | y `prodbefore` x =
-    y * x
-
-simp (NumBinopE Mul (NumBinopE Mul x y) z) | z `prodbefore` y =
-    x * z * y
-
--- Reassociate
-simp (NumBinopE Mul x (NumBinopE Mul y z)) =
-    x * y * z
-
 simp (FracBinopE FDiv x y)
   | x == 0 && y == 0 = Undefined
   | x == 0           = 0
@@ -323,6 +291,47 @@ simp (FracBinopE FDiv x y)
   | x == 1           = FracPowE y (-1)
   | y == 1           = x
   | x == y           = 1
+
+-- Add constants: x + k1 + k2 = x + (k1 + k2)
+--
+-- We need this rewrite since constants are moved to the end of a sum.
+--
+-- We /do not/ need the analogous rewrite for multiplication since constants are
+-- moved to the /beginning/ of a product where the will be caught by the final
+-- rules using @'liftNum2'@.
+simp (NumBinopE Add (NumBinopE Add x (ConstE n)) (ConstE m)) | isExact y =
+    x + ConstE y
+  where
+    y = n + m
+
+-- Re-associate terms in sum: x + (y + z) => x + y + z
+simp (NumBinopE Add x (NumBinopE Add y z)) =
+    x + y + z
+
+-- Reorder terms in sum
+simp (NumBinopE Add x y) | y `sumbefore` x =
+    y + x
+
+simp (NumBinopE Add (NumBinopE Add x y) z) | z `sumbefore` y =
+    x + z + y
+
+-- Re-associate terms in product: x * (y * z) => x * y * z
+simp (NumBinopE Mul x (NumBinopE Mul y z)) =
+    x * y * z
+
+-- Reorder terms in product
+simp (NumBinopE Mul x y) | y `prodbefore` x =
+    y * x
+
+simp (NumBinopE Mul (NumBinopE Mul x y) z) | z `prodbefore` y =
+    x * z * y
+
+-- Identities of the form x*y/x
+simp (NumBinopE Mul x (FracBinopE FDiv y x')) | x' == x =
+    y
+
+simp (NumBinopE Mul (FracBinopE FDiv y x) x') | x' == x =
+    y
 
 simp (FracBinopE FDiv (NumBinopE Mul x y) x') | x' == x =
     y
@@ -442,6 +451,7 @@ simp (NumBinopE Sub (FloatUnopE Log x) (FloatUnopE Log y)) =
 simp (NumBinopE Sub (FloatBinopE LogBase b x) (FloatBinopE LogBase b' y)) | b' == b =
     FloatBinopE LogBase b (x / y)
 
+-- Fall-through rules. These will combine constants when possible.
 simp (NumUnopE op x)      = liftNum op x
 simp (FracUnopE op x)     = liftFractional op x
 simp (FloatUnopE op x)    = liftFloating op x
