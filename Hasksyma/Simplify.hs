@@ -365,6 +365,19 @@ simp (FracBinopE FDiv (NumUnopE Neg x) y) =
 simp (FracBinopE FDiv x (NumUnopE Neg y)) =
     -(x/y)
 
+-- Distribute multiplication/division over addition/subtraction
+simp (NumBinopE Mul x (NumBinopE Add y z)) =
+    x*y + x*z
+
+simp (NumBinopE Mul x (NumBinopE Sub y z)) =
+    x*y - x*z
+
+simp (FracBinopE FDiv (NumBinopE Add y z) x) =
+    y/x + z/x
+
+simp (FracBinopE FDiv (NumBinopE Sub y z) x) =
+    y/x - z/x
+
 -- Identities of the form x*y/x
 simp (NumBinopE Mul x (FracBinopE FDiv y x')) | x' == x =
     y
