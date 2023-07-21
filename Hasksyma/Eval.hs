@@ -219,6 +219,11 @@ liftFloating2 :: (IsConst a, Floating a, Floating (Const a))
               -> Exp a
               -> Exp a
               -> Exp a
+liftFloating2 LogBase (ConstE (IntegerC x)) (ConstE (IntegerC y)) | x ^ z == y = ConstE (IntegerC z)
+  where
+    z :: Integer
+    z = round (logBase (fromIntegral x) (fromIntegral y) :: Double)
+
 liftFloating2 op (ConstE x) (ConstE y) | isExact z = ConstE z
   where
     z = floatbinop op x y
