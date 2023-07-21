@@ -230,6 +230,9 @@ sumbefore (NumBinopE Mul ConstE{} x) (NumBinopE Mul ConstE{} y) = x `sumbefore` 
 sumbefore (NumBinopE Mul ConstE{} x) y                          = x `sumbefore` y
 sumbefore x                          (NumBinopE Mul ConstE{} y) = x `sumbefore` y
 
+-- Note that we /reverse/ the comparison for expressions in the denominator
+sumbefore (FracBinopE FDiv _ x) (FracBinopE FDiv _ y) = y `sumbefore` x
+
 sumbefore (pow -> Just p1) (pow -> Just p2)
     | base p1 == base p2 = joinPowWith go p1 p2
     | otherwise          = base p1 `sumbefore` base p2
@@ -245,6 +248,11 @@ prodbefore :: (Eq a, Num a, IsConst a) => Exp a -> Exp a -> Bool
 prodbefore ConstE{}           ConstE{}           = False
 prodbefore ConstE{}           _                  = True
 prodbefore (VarE x)           (VarE y)           = x < y
+prodbefore x                  (NumUnopE Neg y)   = x `prodbefore` y
+prodbefore IntPowE{}          FloatUnopE{}       = True
+prodbefore FracPowE{}         FloatUnopE{}       = True
+prodbefore (IntPowE x _)      y                  = x `prodbefore` y
+prodbefore (FracPowE x _)     y                  = x `prodbefore` y
 prodbefore (NumUnopE op1 _)   (NumUnopE op2 _)   = op1 < op2
 prodbefore (FracUnopE op1 _)  (FracUnopE op2 _)  = op1 < op2
 prodbefore (FloatUnopE op1 _) (FloatUnopE op2 _) = op1 < op2
@@ -310,6 +318,9 @@ simp (NumBinopE Add x (NumBinopE Add y z)) =
 simp (NumBinopE Add x y) | y `sumbefore` x =
     y + x
 
+simp (NumBinopE Sub x y) | y `sumbefore` x =
+    -y + x
+
 simp (NumBinopE Add (NumBinopE Add x y) z) | z `sumbefore` y =
     x + z + y
 
@@ -323,6 +334,12 @@ simp (NumBinopE Mul x y) | y `prodbefore` x =
 
 simp (NumBinopE Mul (NumBinopE Mul x y) z) | z `prodbefore` y =
     x * z * y
+
+simp (FracBinopE FDiv (NumBinopE Mul x y) z) | z `prodbefore` y =
+    x/z * y
+
+simp (NumBinopE Mul x (FracBinopE FDiv y z)) | z `prodbefore` y =
+    x/z * y
 
 -- Simplify negation
 simp (NumUnopE Neg (ConstE k)) =
