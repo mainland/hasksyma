@@ -262,8 +262,6 @@ prodbefore _ _ = False
 
 -- | One-step expression simplification.
 simp :: forall a . (Eq a, Num a, IsConst a) => Exp a -> Exp a
-simp (NumUnopE Neg (NumUnopE Neg x)) = x
-
 simp (FracUnopE Recip (FracUnopE Recip x)) = x
 
 simp (NumBinopE Add x y)
@@ -325,6 +323,30 @@ simp (NumBinopE Mul x y) | y `prodbefore` x =
 
 simp (NumBinopE Mul (NumBinopE Mul x y) z) | z `prodbefore` y =
     x * z * y
+
+-- Simplify negation
+simp (NumUnopE Neg (ConstE k)) =
+    ConstE (-k)
+
+simp (NumUnopE Neg (NumUnopE Neg x)) = x
+
+simp (NumBinopE Add x (NumUnopE Neg y)) =
+    x - y
+
+simp (NumBinopE Sub x (NumUnopE Neg y)) =
+    x + y
+
+simp (NumBinopE Mul (NumUnopE Neg x) y) =
+    -(x*y)
+
+simp (NumBinopE Mul x (NumUnopE Neg y)) =
+    -(x*y)
+
+simp (FracBinopE FDiv (NumUnopE Neg x) y) =
+    -(x/y)
+
+simp (FracBinopE FDiv x (NumUnopE Neg y)) =
+    -(x/y)
 
 -- Identities of the form x*y/x
 simp (NumBinopE Mul x (FracBinopE FDiv y x')) | x' == x =
