@@ -503,6 +503,56 @@ simp (NumBinopE Sub (FloatUnopE Log x) (FloatUnopE Log y)) =
 simp (NumBinopE Sub (FloatBinopE LogBase b x) (FloatBinopE LogBase b' y)) | b' == b =
     FloatBinopE LogBase b (x / y)
 
+-- Simplify differentiation
+simp (DiffE ConstE{} _) =
+    0
+
+simp (DiffE (VarE x) x')
+    | x' == x   = 1
+    | otherwise = 0
+
+simp (DiffE (NumUnopE Neg u) x) =
+    negate $ DiffE u x
+
+simp (DiffE (NumBinopE Add u v) x) =
+    DiffE u x + DiffE v x
+
+simp (DiffE (NumBinopE Sub u v) x) =
+    DiffE u x - DiffE v x
+
+simp (DiffE (NumBinopE Mul u v) x) =
+    u * DiffE v x + v * DiffE u x
+
+simp (DiffE (FracBinopE FDiv u v) x) =
+    (v * DiffE u x - u * DiffE v x) / v ^ 2
+
+simp (DiffE (IntPowE u n) x) =
+    fromIntegral n * u ^^ (n-1) * DiffE u x
+
+simp (DiffE (FracPowE u n) x) =
+    fromIntegral n * u ^^ (n-1) * DiffE u x
+
+simp (DiffE (FloatBinopE Pow u v) x) =
+    v * u ** (v-1) * DiffE u x + u ** v * log u * DiffE v x
+
+simp (DiffE (FloatUnopE Exp u) x) =
+    FloatUnopE Exp u * DiffE u x
+
+simp (DiffE (FloatUnopE Log u) x) =
+    DiffE u x / u
+
+simp (DiffE (FloatUnopE Sin u) x) =
+    cos u * DiffE u x
+
+simp (DiffE (FloatUnopE Cos u) x) =
+    - (sin u) * DiffE u x
+
+simp (DiffE (FloatUnopE Sinh u) x) =
+    cosh u * DiffE u x
+
+simp (DiffE (FloatUnopE Cosh u) x) =
+    sinh u * DiffE u x
+
 -- Fall-through rules. These will combine constants when possible.
 simp (NumUnopE op x)      = liftNum op x
 simp (FracUnopE op x)     = liftFractional op x

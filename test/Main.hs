@@ -16,6 +16,7 @@ import Test.QuickCheck
 import Hasksyma.Const
 
 import Test.Const
+import Test.Diff
 import Test.Eval
 import Test.Exact
 import Test.Simplify
@@ -29,3 +30,4 @@ spec = do
     exactConstTests
     evalTests
     simplifyTests
+    diffTests
