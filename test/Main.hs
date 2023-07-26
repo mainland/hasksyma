@@ -19,6 +19,7 @@ import Test.Const
 import Test.Diff
 import Test.Eval
 import Test.Exact
+import Test.Integrate
 import Test.Simplify
 
 main :: IO ()
@@ -31,3 +32,4 @@ spec = do
     evalTests
     simplifyTests
     diffTests
+    integrateTests

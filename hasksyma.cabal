@@ -31,6 +31,7 @@ library
     Hasksyma.Diff
     Hasksyma.Eval
     Hasksyma.Exp
+    Hasksyma.Integrate
     Hasksyma.LaTeX
     Hasksyma.Pretty
     Hasksyma.Simplify
@@ -64,6 +65,7 @@ test-suite full
     Test.Diff
     Test.Eval
     Test.Exact
+    Test.Integrate
     Test.Simplify
 
   build-depends:
