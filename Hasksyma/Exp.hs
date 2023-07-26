@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -24,7 +25,25 @@ module Hasksyma.Exp (
   FloatBinop(..),
 
   isConstE,
-  isExactE
+  isExactE,
+
+  numunop,
+  fracunop,
+  floatunop,
+  numbinop,
+  intbinop,
+  fracbinop,
+  floatbinop,
+
+  liftNum,
+  liftNum2,
+  liftIntegral2,
+  liftFractional,
+  liftFractional2,
+  liftFloating,
+  liftFloating2,
+  liftIntPow,
+  liftFracPow
 ) where
 
 import Data.Symbol ( unintern, Symbol )
@@ -36,7 +55,7 @@ import Text.LaTeX.Base.Math ( frac, integral, integralFromTo )
 import Text.PrettyPrint.Mainland ( Doc, (<+>), (<+/>), char, parensIf, text)
 import Text.PrettyPrint.Mainland.Class ( Pretty(pprPrec, ppr) )
 
-import Hasksyma.Const ( IsConst, Const, isExact )
+import Hasksyma.Const ( IsConst, Const(..), isExact )
 import Hasksyma.LaTeX
     ( PrettyTeX(tpprPrec, tppr),
       autoParensIf,
@@ -160,14 +179,217 @@ isExactE (DiffE e _)              = isExactE e
 isExactE (IntE Nothing e _)       = isExactE e
 isExactE (IntE (Just (l, u)) e _) = isExactE l && isExactE u && isExactE e
 
+-- | Compute function corresponding 'NumUnop' operator
+numunop :: NumUnop -> (forall a . Num a => a -> a)
+numunop Neg    = negate
+numunop Abs    = abs
+numunop Signum = signum
+
+-- | Compute function corresponding 'FracUnop' operator
+fracunop :: FracUnop -> (forall a . Fractional a => a -> a)
+fracunop Recip = recip
+
+-- | Compute function corresponding 'FloatUnop' operator
+floatunop :: FloatUnop -> (forall a . Floating a => a -> a)
+floatunop Exp   = exp
+floatunop Log   = log
+floatunop Sqrt  = sqrt
+floatunop Sin   = sin
+floatunop Cos   = cos
+floatunop Tan   = tan
+floatunop Asin  = asin
+floatunop Acos  = acos
+floatunop Atan  = atan
+floatunop Sinh  = sinh
+floatunop Cosh  = cosh
+floatunop Tanh  = tanh
+floatunop Asinh = asinh
+floatunop Acosh = acosh
+floatunop Atanh = atanh
+
+-- | Compute function corresponding 'NumBinop' operator
+numbinop :: NumBinop -> (forall a . Num a => a -> a -> a)
+numbinop Add = (+)
+numbinop Sub = (-)
+numbinop Mul = (*)
+
+-- | Compute function corresponding 'IntBinop' operator
+intbinop :: IntBinop -> (forall a . Integral a => a -> a -> a)
+intbinop Quot = quot
+intbinop Rem  = rem
+intbinop Div  = div
+intbinop Mod  = mod
+
+-- | Compute function corresponding 'FracBinop' operator
+fracbinop :: FracBinop -> (forall a . Fractional a => a -> a -> a)
+fracbinop FDiv = (/)
+
+-- | Compute function corresponding 'floatbinop' operator
+floatbinop :: FloatBinop -> (forall a . Floating a => a -> a -> a)
+floatbinop Pow     = (**)
+floatbinop Root    = \t u -> t ** recip u
+floatbinop LogBase = logBase
+
+-- | Lift a 'NumUnop' operator to an @'Exp' a@, reducing constants when possible
+-- while preserving exactness.
+liftNum :: (IsConst a, Num a)
+        => NumUnop
+        -> Exp a
+        -> Exp a
+liftNum op (ConstE x) | isExact y = ConstE y
+  where
+    y = numunop op x
+
+liftNum op e = NumUnopE op e
+
+-- | Lift a 'NumBinop' operator to an @'Exp' a@, reducing constants when possible
+-- while preserving exactness.
+liftNum2 :: (IsConst a, Num a)
+         => NumBinop
+         -> Exp a
+         -> Exp a
+         -> Exp a
+liftNum2 op (ConstE x) (ConstE y) | isExact z = ConstE z
+  where
+    z = numbinop op x y
+
+liftNum2 op e1 e2 = NumBinopE op e1 e2
+
+-- | Lift a 'IntBinop' operator to an @'Exp' a@, reducing constants when
+-- possible while preserving exactness.
+liftIntegral2 :: (IsConst a, Integral a)
+              => IntBinop
+              -> Exp a
+              -> Exp a
+              -> Exp a
+liftIntegral2 op (ConstE x) (ConstE y) | isExact z = ConstE z
+  where
+    z = intbinop op x y
+
+liftIntegral2 op e1 e2 = IntBinopE op e1 e2
+
+-- | Lift a 'FracUnop' operator to an @'Exp' a@, reducing constants when
+-- possible while preserving exactness.
+liftFractional :: (IsConst a, Fractional a, Eq a)
+               => FracUnop
+               -> Exp a
+               -> Exp a
+liftFractional op (ConstE x) | (not (isRecip op) || x /= 0) && isExact y = ConstE y
+  where
+    y = fracunop op x
+
+    isRecip :: FracUnop -> Bool
+    isRecip Recip = True
+
+liftFractional op e = FracUnopE op e
+
+-- | Lift a 'FracBinop' operator to an @'Exp' a@, reducing constants when
+-- possible while preserving exactness.
+liftFractional2 :: (IsConst a, Eq a, Fractional a)
+                => FracBinop
+                -> Exp a
+                -> Exp a
+                -> Exp a
+liftFractional2 op (ConstE x) (ConstE y) | (not (isFDiv op) || y /= 0) && isExact z = ConstE z
+  where
+    z = fracbinop op x y
+
+    isFDiv :: FracBinop -> Bool
+    isFDiv FDiv = True
+
+liftFractional2 op e1 e2 = FracBinopE op e1 e2
+
+-- | Lift a 'FloatUnop' operator to an @'Exp' a@, reducing constants when
+-- possible while preserving exactness.
+liftFloating :: (IsConst a, Floating a, Floating (Const a))
+             => FloatUnop
+             -> Exp a
+             -> Exp a
+liftFloating op (ConstE x) | isExact y = ConstE y
+  where
+    y = floatunop op x
+
+liftFloating op e = FloatUnopE op e
+
+-- | Lift a 'FloatBinop' operator to an @'Exp' a@, reducing constants when
+-- possible while preserving exactness.
+liftFloating2 :: (IsConst a, Floating a, Floating (Const a))
+              => FloatBinop
+              -> Exp a
+              -> Exp a
+              -> Exp a
+liftFloating2 LogBase (ConstE (IntegerC x)) (ConstE (IntegerC y)) | x ^ z == y = ConstE (IntegerC z)
+  where
+    z :: Integer
+    z = round (logBase (fromIntegral x) (fromIntegral y) :: Double)
+
+liftFloating2 op (ConstE x) (ConstE y) | isExact z = ConstE z
+  where
+    z = floatbinop op x y
+
+liftFloating2 op e1 e2 = FloatBinopE op e1 e2
+
+-- | Lift operation of raising a number to an integral power to an @'Exp' a@,
+-- reducing constants when possible while preserving exactness.
+liftIntPow :: (IsConst a, Num a, Eq a)
+           => Exp a
+           -> Integer
+           -> Exp a
+liftIntPow (ConstE x) n | (x /= 0 || n /= 0) && isExact z = ConstE z
+  where
+    z = x ^ n
+
+liftIntPow e n = IntPowE e n
+
+-- | Lift operation of raising a number to a non-negative integral power to an
+-- @'Exp' a@, reducing constants when possible while preserving exactness.
+liftFracPow :: (IsConst a, Fractional a, Eq a)
+            => Exp a
+            -> Integer
+            -> Exp a
+liftFracPow (ConstE x) n | (x /= 0 || n > 0) && isExact z = ConstE z
+  where
+    z = x ^^ n
+
+liftFracPow e n = FracPowE e n
+
 deriving instance Show a => Show (Exp a)
 deriving instance (Eq a, IsConst a) => Eq (Exp a)
 deriving instance (Ord a, IsConst a) => Ord (Exp a)
 
 instance (Num a, IsConst a, Eq (Exp a)) => Num (Exp a) where
+#if defined(PEVAL)
+    e1 + e2
+      | e1 == 0   = e2
+      | e2 == 0   = e1
+      | otherwise = liftNum2 Add e1 e2
+
+    e1 - e2
+      | e1 == 0   = -e2
+      | e2 == 0   = e1
+      | otherwise = liftNum2 Sub e1 e2
+
+    IntPowE e n * e'
+      | e' == e  = IntPowE e (n+1)
+
+    e * IntPowE e' n
+      | e' == e  = IntPowE e (n+1)
+
+    IntPowE e n * IntPowE e' m
+      | e' == e  = IntPowE e (n+m)
+
+    e1 * e2
+      | e1 == 0   = 0
+      | e2 == 0   = 0
+      | e1 == 1   = e2
+      | e2 == 1   = e1
+      | e1 == e2  = IntPowE e1 2
+      | otherwise = liftNum2 Mul e1 e2
+#else /* !defined(PEVAL) */
     e1 + e2 = NumBinopE Add e1 e2
     e1 - e2 = NumBinopE Sub e1 e2
     e1 * e2 = NumBinopE Mul e1 e2
+#endif /* !defined(PEVAL) */
 
     abs = NumUnopE Abs
 
@@ -200,16 +422,36 @@ instance (IsConst a, Integral a) => Integral (Exp a) where
     toInteger (ConstE x) = toInteger x
     toInteger _          = error "cannot convert expression to Integer"
 
-instance (Fractional a, IsConst a, Eq (Exp a)) => Fractional (Exp a) where
+instance (Fractional a, Eq a, IsConst a) => Fractional (Exp a) where
+#if defined(PEVAL)
+    (/) = liftFractional2 FDiv
+
+    recip e@VarE{}      = FracPowE e (-1)
+    recip (IntPowE e n) = FracPowE e (-n)
+    recip e             = FracUnopE Recip e
+#else /* !defined(PEVAL) */
     (/) = FracBinopE FDiv
 
     recip = FracUnopE Recip
+#endif /* !defined(PEVAL) */
 
     fromRational = ConstE . fromRational
 
-instance (Floating a, IsConst a, Floating (Const a), Eq (Exp a)) => Floating (Exp a) where
+instance (Floating a, Eq a, IsConst a, Floating (Const a)) => Floating (Exp a) where
     pi = ConstE pi
 
+#if defined(PEVAL)
+    exp = liftFloating Exp
+
+    log = liftFloating Log
+
+    sqrt = liftFloating Sqrt
+
+    e1 ** e2
+        | e2 == 0 && e1 /= 0 = 1
+        | e2 == 1            = e1
+        | otherwise = FloatBinopE Pow e1 e2
+#else /* !defined(PEVAL) */
     exp = FloatUnopE Exp
 
     log = FloatUnopE Log
@@ -217,6 +459,7 @@ instance (Floating a, IsConst a, Floating (Const a), Eq (Exp a)) => Floating (Ex
     sqrt = FloatUnopE Sqrt
 
     (**) = FloatBinopE Pow
+#endif /* !defined(PEVAL) */
 
     logBase = FloatBinopE LogBase
 

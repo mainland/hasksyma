@@ -22,8 +22,16 @@ module Hasksyma.Simplify
 import Data.Ratio ( denominator, numerator )
 
 import Hasksyma.Const ( IsConst, Const(..), isExact )
-import Hasksyma.Eval
-    ( liftNum,
+import Hasksyma.Exp
+    ( Exp(..),
+      FloatBinop(..),
+      FloatUnop(..),
+      FracBinop(..),
+      FracUnop(..),
+      NumBinop(..),
+      NumUnop(..),
+
+      liftNum,
       liftNum2,
       liftIntegral2,
       liftFractional,
@@ -32,14 +40,6 @@ import Hasksyma.Eval
       liftFloating2,
       liftIntPow,
       liftFracPow )
-import Hasksyma.Exp
-    ( Exp(..),
-      FloatBinop(..),
-      FloatUnop(..),
-      FracBinop(..),
-      FracUnop(..),
-      NumBinop(..),
-      NumUnop(..))
 
 -- | Fully simplify an expression.
 simplify :: (Eq a, Num a, IsConst a) => Exp a -> Exp a

@@ -22,6 +22,11 @@ flag cyclotomic
     manual: True
     default: False
 
+flag partial-evaluation
+    description: Enable partial evaluation in Exp instances
+    manual: True
+    default: True
+
 library
   default-language: Haskell2010
 
@@ -52,6 +57,9 @@ library
   if flag(cyclotomic)
     cpp-options: -DCYCLOTOMIC
     build-depends: cyclotomic >= 1.1 && < 1.2
+
+  if flag(partial-evaluation)
+    cpp-options: -DPEVAL
 
 test-suite full
   type: exitcode-stdio-1.0

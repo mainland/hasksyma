@@ -376,7 +376,8 @@ instance Floating (Const Float) where
 #endif /* defined(CYCLOTOMIC) */
     sqrt x             = liftFloating sqrt x
 
-    (**) = liftFloating2 (**)
+    IntegerC m ** IntegerC n | m /= 0 = RationalC (fromInteger m ^^ n)
+    x ** y                            = liftFloating2 (**) x y
 
 #if defined(CYCLOTOMIC)
     sin (Pi k) = RealCycC (RealCyc.sinRev (k / 2))
@@ -416,7 +417,8 @@ instance Floating (Const Double) where
 #endif /* defined(CYCLOTOMIC) */
     sqrt x             = liftFloating sqrt x
 
-    (**) = liftFloating2 (**)
+    IntegerC m ** IntegerC n | m /= 0 = RationalC (fromInteger m ^^ n)
+    x ** y                            = liftFloating2 (**) x y
 
 #if defined(CYCLOTOMIC)
     sin (Pi k) = RealCycC (RealCyc.sinRev (k / 2))
@@ -456,7 +458,8 @@ instance RealFloat a => Floating (Const (Complex a)) where
 #endif /* defined(CYCLOTOMIC) */
     sqrt x             = liftFloating sqrt x
 
-    (**) = liftFloating2 (**)
+    IntegerC m ** IntegerC n | m /= 0 = RationalC (fromInteger m ^^ n)
+    x ** y                            = liftFloating2 (**) x y
 
 #if defined(CYCLOTOMIC)
     sin (Pi k) = CycC (Cyc.sinRev (k / 2))
