@@ -10,7 +10,12 @@ stability:     alpha
 homepage:      https://github.com/mainland/hasksyma
 category:      Language
 synopsis:      Symbolic expressions
-tested-with:   GHC==9.2.8
+tested-with:   GHC==9.2.8,
+               GHC==9.4.8,
+               GHC==9.6.7,
+               GHC==9.8.4,
+               GHC==9.10.3,
+               GHC==9.12.2
 
 description:
   Symbolic expressions.
@@ -42,14 +47,14 @@ library
     Hasksyma.Simplify
 
   build-depends:
-    base            >= 4.12  && < 4.17,
-    containers      >= 0.6   && < 0.7,
-    ihaskell        >= 0.10  && < 0.11,
+    base            >= 4.12  && < 4.22,
+    containers      >= 0.6   && < 0.9,
+    ihaskell        >= 0.10  && < 0.14,
     mainland-pretty >= 0.7   && < 0.8,
     symbol          >= 0.2.4 && < 0.3,
-    text            >= 1.2   && < 1.3,
-    HaTeX           >= 3.21  && < 3.23,
-    QuickCheck      >= 2.13  && < 2.15
+    text            >= 1.2   && < 2.2,
+    HaTeX           >= 3.21  && < 3.24,
+    QuickCheck      >= 2.13  && < 2.18
 
   ghc-options:
     -Wall
@@ -78,12 +83,12 @@ test-suite full
 
   build-depends:
     hasksyma,
-    base            >= 4.12 && < 4.17,
-    hspec           >= 2.9  && < 2.10,
-    hspec-core      >= 2.9  && < 2.10,
+    base            >= 4.12 && < 4.22,
+    hspec           >= 2.9  && < 2.12,
+    hspec-core      >= 2.9  && < 2.12,
     mainland-pretty >= 0.7  && < 0.8,
     HUnit           >= 1.6  && < 1.7,
-    QuickCheck      >= 2.13 && < 2.15
+    QuickCheck      >= 2.13 && < 2.18
 
 source-repository head
   type:     git
