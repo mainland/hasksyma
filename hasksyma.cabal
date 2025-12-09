@@ -79,6 +79,7 @@ test-suite full
     Test.Eval
     Test.Exact
     Test.Integrate
+    Test.PEval
     Test.Simplify
 
   build-depends:
