@@ -86,7 +86,6 @@ test-suite full
     hasksyma,
     base            >= 4.12 && < 4.22,
     hspec           >= 2.9  && < 2.12,
-    hspec-core      >= 2.9  && < 2.12,
     mainland-pretty >= 0.7  && < 0.8,
     HUnit           >= 1.6  && < 1.7,
     QuickCheck      >= 2.13 && < 2.18
