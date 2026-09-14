@@ -92,7 +92,12 @@ class IsConst a where
     toConst :: a -> Const a
     toConst x = Const x
 
--- | Return 'True' if constant is exact
+-- | Return 'True' if a constant retains an exact symbolic representation.
+--
+-- >>> isExact (IntegerC 3 :: Const Double)
+-- True
+-- >>> isExact (Const 3 :: Const Double)
+-- False
 isExact :: Const a -> Bool
 isExact Pi{}        = True
 isExact E{}         = True

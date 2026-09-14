@@ -64,6 +64,28 @@ API documentation is generated independently from Haddock comments:
 cabal haddock hasksyma:lib:hasksyma --haddock-all --disable-documentation
 ```
 
+Examples introduced by `>>>` in Haddock comments are executable documentation.
+CI checks them on GHC 9.12.4 with cabal-docspec 0.0.0.20250606, using the
+checksum-pinned binary in `.github/workflows/haskell-ci.yml`. Each comment
+group sees the documented module's public API, so explicitly import types or
+constructors that the module does not export.
+
+With the same cabal-docspec executable on `PATH`, build the core and run its
+examples using the compiler selected for the Cabal build:
+
+```console
+cabal build hasksyma:lib:hasksyma
+cabal-docspec hasksyma
+```
+
+If Cabal uses XDG directories, this cabal-docspec version needs their paths
+explicitly. Set these variables before running it:
+
+```console
+export CABAL_CONFIG="$(cabal path --config-file)"
+export CABAL_DIR="$(dirname "$(cabal path --store-dir)")"
+```
+
 ## Container
 
 Build the optional IHaskell development image with the current user's numeric

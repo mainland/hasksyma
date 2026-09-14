@@ -141,6 +141,16 @@ jobs:
           rm -f cabal-plan.xz
           chmod a+x $HOME/.cabal/bin/cabal-plan
           cabal-plan --version
+      - name: install cabal-docspec
+        if: matrix.compiler == 'ghc-9.12.4'
+        run: |
+          mkdir -p $HOME/.cabal/bin
+          curl -sL https://github.com/phadej/cabal-extras/releases/download/cabal-docspec-0.0.0.20250606/cabal-docspec-0.0.0.20250606-x86_64-linux.xz > cabal-docspec.xz
+          echo 'cc20bb5c19501b42bde77556bc419c7c0a5c8d1eb65663024d8a4e4c868bef25  cabal-docspec.xz' | sha256sum -c -
+          xz -d < cabal-docspec.xz > $HOME/.cabal/bin/cabal-docspec
+          rm -f cabal-docspec.xz
+          chmod a+x $HOME/.cabal/bin/cabal-docspec
+          cabal-docspec --version
       - name: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -200,6 +210,11 @@ jobs:
       - name: tests
         run: |
           $CABAL v2-test $ARG_COMPILER $ARG_TESTS $ARG_BENCH $TARGET_TEST --test-show-details=direct
+      - name: docspec
+        if: matrix.compiler == 'ghc-9.12.4'
+        run: |
+          $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH $TARGET_CORE
+          cabal-docspec $ARG_COMPILER hasksyma
       - name: cabal check
         run: |
           cd ${PKGDIR_hasksyma} || false

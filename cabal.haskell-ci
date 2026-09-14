@@ -4,7 +4,7 @@
 
 cabal-install-version: 3.16.1.0
 distribution: noble
-docspec: False
+docspec: True
 github-action-name: Haskell CI
 github-patches: .github/haskell-ci.patch
 haddock-components: libs

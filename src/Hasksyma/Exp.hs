@@ -170,12 +170,25 @@ data Exp a where
     -- represents a definite integral.
     IntE        :: (Floating a, Floating (Const a)) => Maybe (Exp a, Exp a) -> Exp a -> Var -> Exp a
 
--- | Return 'True' if expression is a constant
+-- | Return 'True' if an expression is a single constant node.
+--
+-- >>> import Hasksyma.Const (Const (..))
+-- >>> isConstE (ConstE (IntegerC 3) :: Exp Double)
+-- True
+-- >>> isConstE (Undefined :: Exp Double)
+-- False
 isConstE :: Exp a -> Bool
 isConstE ConstE{} = True
 isConstE _        = False
 
--- | Return 'True' if expression is exact
+-- | Return 'True' if every part of an expression has an exact symbolic
+-- representation.
+--
+-- >>> import Hasksyma.Const (Const (..))
+-- >>> isExactE (VarE "x" :: Exp Double)
+-- True
+-- >>> isExactE (ConstE (Const pi) :: Exp Double)
+-- False
 isExactE :: Exp a -> Bool
 isExactE Undefined{}              = True
 isExactE Infty{}                  = True

@@ -22,16 +22,24 @@ diff --git a/.github/workflows/haskell-ci.yml b/.github/workflows/haskell-ci.yml
            echo "HEADHACKAGE=false" >> "$GITHUB_ENV"
            echo "ARG_COMPILER=--$HCKIND --with-compiler=$HC" >> "$GITHUB_ENV"
          env:
-@@ -135,7 +142,7 @@
+@@ -135,6 +142,7 @@
            chmod a+x $HOME/.cabal/bin/cabal-plan
            cabal-plan --version
+       - name: install cabal-docspec
++        if: matrix.compiler == 'ghc-9.12.4'
+         run: |
+           mkdir -p $HOME/.cabal/bin
+           curl -sL https://github.com/phadej/cabal-extras/releases/download/cabal-docspec-0.0.0.20250606/cabal-docspec-0.0.0.20250606-x86_64-linux.xz > cabal-docspec.xz
+@@ -144,7 +152,7 @@
+           chmod a+x $HOME/.cabal/bin/cabal-docspec
+           cabal-docspec --version
        - name: checkout
 -        uses: actions/checkout@v7
 +        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
          with:
            path: source
        - name: initial cabal.project for sdist
-@@ -172,41 +179,41 @@
+@@ -181,45 +189,46 @@
            cat cabal.project.local
        - name: dump install plan
          run: |
@@ -63,6 +71,14 @@ diff --git a/.github/workflows/haskell-ci.yml b/.github/workflows/haskell-ci.yml
          run: |
 -          $CABAL v2-test $ARG_COMPILER $ARG_TESTS $ARG_BENCH all --test-show-details=direct
 +          $CABAL v2-test $ARG_COMPILER $ARG_TESTS $ARG_BENCH $TARGET_TEST --test-show-details=direct
+       - name: docspec
+-        run: |
+-          $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH all
+-          cabal-docspec $ARG_COMPILER
++        if: matrix.compiler == 'ghc-9.12.4'
++        run: |
++          $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH $TARGET_CORE
++          cabal-docspec $ARG_COMPILER hasksyma
        - name: cabal check
          run: |
            cd ${PKGDIR_hasksyma} || false

@@ -30,6 +30,12 @@ import           Hasksyma.Exp   (Exp (..), FloatBinop (..), FloatUnop (..), Frac
                                  liftIntPow, liftIntegral2, liftNum, liftNum2)
 
 -- | Fully simplify an expression.
+--
+-- >>> :set -XOverloadedStrings
+-- >>> import Hasksyma.Exp (Exp (..), NumBinop (..))
+-- >>> let x = VarE "x" :: Exp Rational
+-- >>> simplify (NumBinopE Add x 0) == x
+-- True
 simplify :: (Eq a, Num a, IsConst a) => Exp a -> Exp a
 simplify e | e' == e   = e
            | otherwise = simplify e'

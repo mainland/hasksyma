@@ -24,6 +24,11 @@ import           Hasksyma.Exp   (Exp (..), floatbinop, floatunop, fracbinop, fra
 
 -- | Fully evaluate all closed subexpressions of an expression. Does not
 -- preserve exactness.
+--
+-- >>> import Hasksyma.Const (Const (..))
+-- >>> import Hasksyma.Exp (Exp (..), NumBinop (..))
+-- >>> eval (NumBinopE Add (ConstE (Const 2)) (ConstE (Const 3)) :: Exp Integer) == ConstE (Const 5)
+-- True
 eval :: (IsConst a, Eq a) => Exp a -> Exp a
 eval e@Undefined{}           = e
 eval e@Infty{}               = e

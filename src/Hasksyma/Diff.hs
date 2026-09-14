@@ -23,6 +23,12 @@ import           Hasksyma.Exp   (Exp (DiffE, VarE))
 -- The second argument must be a 'VarE'. Passing any other expression raises an
 -- error. Apply 'Hasksyma.Simplify.simplify' to reduce the
 -- resulting 'DiffE'.
+--
+-- >>> :set -XOverloadedStrings
+-- >>> import Hasksyma.Exp (Exp (..))
+-- >>> let x = VarE "x" :: Exp Double
+-- >>> diff x x == DiffE x "x"
+-- True
 diff :: (Show a, Floating a, Floating (Const a))
      => Exp a -- ^ Expression to differentiate
      -> Exp a -- ^ Variable expression to differentiate with respect to
