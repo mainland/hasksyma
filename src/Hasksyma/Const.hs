@@ -48,6 +48,12 @@ import           Hasksyma.Pretty                 (appPrec, appPrec1, mulPrec, mu
 import           Hasksyma.Pretty                 (addPrec)
 #endif /* defined(CYCLOTOMIC) */
 
+-- | Symbolic constants with exact numeric representations.
+--
+-- With @cyclotomic@ enabled, 'abs' and 'signum' on exact cyclotomic constants
+-- preserve exactness when the squared magnitude is rational, including zero
+-- and real square roots of rationals. Other squared magnitudes currently raise
+-- an error in the cyclotomic library. No approximate sign test is used.
 data Const a where
     Const     :: a -> Const a
     Pi        :: Floating a => Rational -> Const a
@@ -259,11 +265,19 @@ instance (IsConst a, Num a) => Num (Const a) where
     negate (Pi k) = Pi (negate k)
     negate x      = liftNum negate x
 
-    abs (Pi k) = Pi (abs k)
-    abs x      = liftNum abs x
+    abs (Pi k)                        = Pi (abs k)
+#if defined(CYCLOTOMIC)
+    -- The real wrapper leaves abs and signum undefined. Use the exact complex
+    -- implementation, which supports rational squared magnitudes.
+    abs (RealCycC (RealCyclotomic x)) = RealCycC (RealCyclotomic (abs x))
+#endif
+    abs x                             = liftNum abs x
 
-    signum (Pi k) = RationalC (signum k)
-    signum x      = liftNum signum x
+    signum (Pi k)                        = RationalC (signum k)
+#if defined(CYCLOTOMIC)
+    signum (RealCycC (RealCyclotomic x)) = RealCycC (RealCyclotomic (signum x))
+#endif
+    signum x                             = liftNum signum x
 
     fromInteger x = IntegerC x
 

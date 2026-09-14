@@ -54,3 +54,34 @@ jobs:
           --enable-tests
           --flags=-partial-evaluation
           --test-show-details=direct
+
+  cyclotomic:
+    name: Cyclotomic support / GHC 9.12.4
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Haskell
+        id: setup
+        uses: haskell-actions/setup@cd0d9bdd65b20557f41bea4dbe43d0b5fbbfe553 # v2.11.0
+        with:
+          ghc-version: 9.12.4
+          cabal-version: ${{ env.CABAL_VERSION }}
+
+      - name: Cache Cabal store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ runner.os }}-cyclotomic-ghc-9.12.4-${{ hashFiles('hasksyma.cabal', 'cabal.project*') }}
+          restore-keys: |
+            ${{ runner.os }}-cyclotomic-ghc-9.12.4-
+
+      - name: Run cyclotomic tests
+        run: >-
+          cabal test
+          --project-file=cabal.project.cyclotomic
+          hasksyma:test:full
+          --enable-tests
+          --test-show-details=direct

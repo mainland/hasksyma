@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RankNTypes        #-}
@@ -10,12 +11,17 @@
 
 module Test.Const where
 
-import           Data.Proxy      (Proxy (Proxy))
-import           Test.Hspec      (Spec, describe, it)
+#if defined(CYCLOTOMIC)
+import           Control.Exception (evaluate)
+import           Control.Monad     (forM_)
+import           Test.Hspec        (errorCall, shouldBe, shouldThrow)
+#endif
+import           Data.Proxy        (Proxy (Proxy))
+import           Test.Hspec        (Spec, describe, it)
 import           Test.QuickCheck
 
 import           Hasksyma.Const
-import           Test.Arbitrary  ()
+import           Test.Arbitrary    ()
 
 class (Eq a, Show a) => Equiv a where
     equiv :: a -> a -> Property
@@ -122,6 +128,28 @@ prop_float2_equiv _ (FloatBinop _ f p) x y = p x y ==> fromConst (f x y) `equiv`
 
 constTests :: Spec
 constTests = describe "Computations with constants" $ do
+#if defined(CYCLOTOMIC)
+    describe "Real cyclotomic magnitude and sign" $ do
+      it "preserves exact magnitudes and signs of rational values" $
+        forM_ [-3/2, 0, 5/3] $ \q -> do
+          let c = RealCycC (fromRational q) :: Const Double
+          abs c `shouldBe` RationalC (abs q)
+          signum c `shouldBe` RationalC (signum q)
+          isExact (abs c) `shouldBe` True
+          isExact (signum c) `shouldBe` True
+      it "preserves exact magnitudes and signs of irrational radicals" $ do
+        let root = sqrt (IntegerC 2) :: Const Double
+        forM_ [-1, 1] $ \s -> do
+          let c = IntegerC s * root
+          abs c `shouldBe` root
+          signum c `shouldBe` IntegerC s
+          isExact (abs c) `shouldBe` True
+          isExact (signum c) `shouldBe` True
+      it "reports unsupported magnitudes without an approximate fallback" $ do
+        let c = 1 + sqrt (IntegerC 2) :: Const Double
+        evaluate (fromConst (abs c)) `shouldThrow` errorCall "abs not available for this number"
+        evaluate (fromConst (signum c)) `shouldThrow` errorCall "signum not available for this number"
+#endif
     it "Num operations over Integer correct" $
         property $ prop_num_equiv (Proxy :: Proxy Integer)
     it "Num operations over Rational correct" $
