@@ -45,6 +45,14 @@ flag partial-evaluation
 
 common common-settings
   default-language: GHC2024
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wmissing-home-modules
+    -Wpartial-fields
 
 library
   import: common-settings
@@ -68,9 +76,6 @@ library
     symbol          >= 0.2.4 && < 0.3,
     text            >= 1.2   && < 2.2,
     HaTeX           >= 3.21  && < 3.24
-
-  ghc-options:
-    -Wall
 
   if flag(cyclotomic)
     cpp-options: -DCYCLOTOMIC
@@ -98,9 +103,6 @@ library ihaskell
     HaTeX           >= 3.21  && < 3.24,
     ihaskell        >= 0.13  && < 0.14,
     text            >= 1.2   && < 2.2
-
-  ghc-options:
-    -Wall
 
 test-suite full
   import: common-settings

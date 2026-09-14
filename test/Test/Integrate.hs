@@ -9,13 +9,11 @@
 
 module Test.Integrate where
 
-import           Control.Applicative (empty, (<|>))
-import           Test.Hspec          (Spec, describe, it)
-import           Test.HUnit          ((@?=))
+import           Test.Hspec         (Spec, describe, it)
+import           Test.HUnit         ((@?=))
 
 import           Hasksyma.Const
-import           Hasksyma.Diff       (diff)
-import           Hasksyma.Exp        (Exp (..))
+import           Hasksyma.Exp       (Exp (..))
 import           Hasksyma.Integrate
 import           Hasksyma.Simplify
 
@@ -26,29 +24,24 @@ integral _ x        = error $ show x ++ " is not a variable"
 integrate :: (Ord a, Floating a, Floating (Const a), IsConst a)
           => Exp a
           -> Exp a
-integrate e | e' == e   = e
-            | otherwise = integrate e'
+integrate e0 | e1 == e0  = e0
+             | otherwise = integrate e1
   where
-    e' = mapExp int1 e
+    e1 = mapExp int1 e0
 
-    int1 (IntE Nothing e x) = case heuristicIntegrate e x of
-                                []   -> IntE Nothing e x
-                                e':_ -> e'
+    int1 (IntE Nothing integrand variable) = case heuristicIntegrate integrand variable of
+                                               []            -> IntE Nothing integrand variable
+                                               antideriv : _ -> antideriv
 
-    int1 e = simp e
+    int1 expression = simp expression
 
 integrateTests :: Spec
 integrateTests = describe "Integration" $ do
     it "int x^2 dx = x^3/3" $
-        integrate (integral (x^2) x :: Exp Double) @?= IntPowE x 3/3
+        integrate (integral (x^(2 :: Integer)) x :: Exp Double) @?= IntPowE x 3/3
     it "int x * sin(x^2) dx = -1/2*cos (x^2)" $
-        integrate (integral (x * sin(x^2)) x :: Exp Double) @?=
+        integrate (integral (x * sin(x^(2 :: Integer))) x :: Exp Double) @?=
           -(ConstE (RationalC (1/2)) * cos (IntPowE x 2))
   where
-    a,b,c, x, y, z :: Exp a
-    a = VarE "a"
-    b = VarE "b"
-    c = VarE "c"
+    x :: Exp a
     x = VarE "x"
-    y = VarE "y"
-    z = VarE "z"

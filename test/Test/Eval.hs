@@ -25,7 +25,7 @@ module Test.Eval
   where
 
 import           Control.Applicative (Alternative, empty, (<|>))
-import           Control.Monad       (forM_, when)
+import           Control.Monad       (forM_)
 import           Test.Hspec          (Spec, describe, it)
 import           Test.HUnit          ((@?=))
 import           Test.QuickCheck     (Arbitrary (..), Gen, Positive (getPositive), Property,
@@ -138,59 +138,59 @@ arbitraryClosedExp wd = sized $ \n ->
 shrinkExp :: (Exp Double -> Bool)
           -> Exp Double
           -> [Exp Double]
-shrinkExp wd = shrink
+shrinkExp wd = shrinkOne
   where
-    shrink :: Exp Double -> [Exp Double]
-    shrink (NumUnopE op e)        = filter wd $
+    shrinkOne :: Exp Double -> [Exp Double]
+    shrinkOne (NumUnopE op e)        = filter wd $
                                     pure e
                                     <|> NumUnopE op <$> evalshrink e
-                                    <|> NumUnopE op <$> shrink e
-    shrink (FracUnopE op e)       = filter wd $
+                                    <|> NumUnopE op <$> shrinkOne e
+    shrinkOne (FracUnopE op e)       = filter wd $
                                     pure e
                                     <|> FracUnopE op <$> evalshrink e
-                                    <|> FracUnopE op <$> shrink e
-    shrink (FloatUnopE op e)      = filter wd $
+                                    <|> FracUnopE op <$> shrinkOne e
+    shrinkOne (FloatUnopE op e)      = filter wd $
                                     pure e
                                     <|> FloatUnopE op <$> evalshrink e
-                                    <|> FloatUnopE op <$> shrink e
-    shrink (NumBinopE op e1 e2)   = filter wd $
+                                    <|> FloatUnopE op <$> shrinkOne e
+    shrinkOne (NumBinopE op e1 e2)   = filter wd $
                                     pure e1 <|> pure e2
                                     <|> NumBinopE op <$> evalshrink e1 <*> pure e2
                                     <|> NumBinopE op e1 <$> evalshrink e2
-                                    <|> NumBinopE op <$> shrink e1 <*> pure e2
-                                    <|> NumBinopE op e1 <$> shrink e2
-    shrink (IntPowE e n)          = filter wd $
+                                    <|> NumBinopE op <$> shrinkOne e1 <*> pure e2
+                                    <|> NumBinopE op e1 <$> shrinkOne e2
+    shrinkOne (IntPowE e n)          = filter wd $
                                     pure e <|> pure (fromInteger n)
                                     <|> IntPowE <$> evalshrink e <*> pure n
-                                    <|> IntPowE <$> shrink e <*> pure n
+                                    <|> IntPowE <$> shrinkOne e <*> pure n
                                     <|> if n > 0 then pure (IntPowE e (n-1)) else empty
-    shrink (FracPowE e n)         = filter wd $
+    shrinkOne (FracPowE e n)         = filter wd $
                                     pure e <|> pure (fromInteger n)
                                     <|> FracPowE <$> evalshrink e <*> pure n
-                                    <|> FracPowE <$> shrink e <*> pure n
+                                    <|> FracPowE <$> shrinkOne e <*> pure n
                                     <|> if n > 0 then pure (FracPowE e (n-1)) else empty
-    shrink (IntBinopE op e1 e2)   = filter wd $
+    shrinkOne (IntBinopE op e1 e2)   = filter wd $
                                     pure e1 <|> pure e2
                                     <|> IntBinopE op <$> evalshrink e1 <*> pure e2
                                     <|> IntBinopE op e1 <$> evalshrink e2
-                                    <|> IntBinopE op <$> shrink e1 <*> pure e2
-                                    <|> IntBinopE op e1 <$> shrink e2
-    shrink (FracBinopE op e1 e2)  = filter wd $
+                                    <|> IntBinopE op <$> shrinkOne e1 <*> pure e2
+                                    <|> IntBinopE op e1 <$> shrinkOne e2
+    shrinkOne (FracBinopE op e1 e2)  = filter wd $
                                     pure e1 <|> pure e2
                                     <|> FracBinopE op <$> evalshrink e1 <*> pure e2
                                     <|> FracBinopE op e1 <$> evalshrink e2
-                                    <|> FracBinopE op <$> shrink e1 <*> pure e2
-                                    <|> FracBinopE op e1 <$> shrink e2
-    shrink (FloatBinopE op e1 e2) = filter wd $
+                                    <|> FracBinopE op <$> shrinkOne e1 <*> pure e2
+                                    <|> FracBinopE op e1 <$> shrinkOne e2
+    shrinkOne (FloatBinopE op e1 e2) = filter wd $
                                     pure e1 <|> pure e2
                                     <|> FloatBinopE op <$> evalshrink e1 <*> pure e2
                                     <|> FloatBinopE op e1 <$> evalshrink e2
-                                    <|> FloatBinopE op <$> shrink e1 <*> pure e2
-                                    <|> FloatBinopE op e1 <$> shrink e2
-    shrink _                      = empty
+                                    <|> FloatBinopE op <$> shrinkOne e1 <*> pure e2
+                                    <|> FloatBinopE op e1 <$> shrinkOne e2
+    shrinkOne _                      = empty
 
     evalshrink :: Alternative f => Exp Double -> f (Exp Double)
-    evalshrink e = empty
+    evalshrink _ = empty
 
 newtype DExp = DExp (Exp Double)
   deriving (Eq, Ord, Show, Num, Fractional, Floating)

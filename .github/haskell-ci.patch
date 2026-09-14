@@ -54,11 +54,11 @@ diff --git a/.github/workflows/haskell-ci.yml b/.github/workflows/haskell-ci.yml
        - name: build w/o tests
          run: |
 -          $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks all
-+          $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks $TARGET_CORE
++          $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks $TARGET_CORE --ghc-options=-Werror
        - name: build
          run: |
 -          $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH all --write-ghc-environment-files=always
-+          $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH $TARGET_CORE $TARGET_TEST --write-ghc-environment-files=always
++          $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH $TARGET_CORE $TARGET_TEST --write-ghc-environment-files=always --ghc-options=-Werror
        - name: tests
          run: |
 -          $CABAL v2-test $ARG_COMPILER $ARG_TESTS $ARG_BENCH all --test-show-details=direct

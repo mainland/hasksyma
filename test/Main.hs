@@ -8,12 +8,7 @@
 
 module Main where
 
-import           Data.Complex
-import           Test.Hspec
-import           Test.HUnit
-import           Test.QuickCheck
-
-import           Hasksyma.Const
+import           Test.Hspec     (Spec, hspec)
 
 import           Test.Const
 import           Test.Diff

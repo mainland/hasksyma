@@ -10,34 +10,26 @@
 
 module Test.PEval where
 
-import           Control.Applicative             (empty, (<|>))
-import           Data.Proxy                      (Proxy (Proxy))
-import           Test.Hspec
-import           Test.HUnit
-import           Test.QuickCheck
-import           Text.PrettyPrint.Mainland       (prettyCompact, text, (<+>))
-import           Text.PrettyPrint.Mainland.Class (ppr)
+import           Data.Proxy      (Proxy (Proxy))
+import           Test.Hspec      (SpecWith, describe, it)
+import           Test.QuickCheck (NonNegative (NonNegative), Property, property, (===))
 
-import           Hasksyma.Const
-import           Hasksyma.Eval
-import           Hasksyma.Exp
-import           Hasksyma.Simplify
-
-import           Test.Eval
+import           Hasksyma.Const  (IsConst)
+import           Hasksyma.Exp    (Exp (FracPowE, IntPowE, VarE))
 
 prop_nonnegative_pow :: (Num a, IsConst a, Eq a, Show a)
                      => proxy a
                      -> Exp a -> NonNegative Integer -> Property
-prop_nonnegative_pow _ e (NonNegative 0) = e^0 === 1
-prop_nonnegative_pow _ e (NonNegative 1) = e^1 === e
+prop_nonnegative_pow _ e (NonNegative 0) = e^(0 :: Integer) === 1
+prop_nonnegative_pow _ e (NonNegative 1) = e^(1 :: Integer) === e
 prop_nonnegative_pow _ e (NonNegative n) = e^n === IntPowE e n
 
 prop_integral_pow :: (Fractional a, IsConst a, Eq a, Show a)
                   => proxy a
                   -> Exp a -> Integer -> Property
-prop_integral_pow _ e (-1) = e^^(-1) === recip e
-prop_integral_pow _ e 0    = e^^0 === 1
-prop_integral_pow _ e 1    = e^^1 === e
+prop_integral_pow _ e (-1) = e^^(-1 :: Integer) === recip e
+prop_integral_pow _ e 0    = e^^(0 :: Integer) === 1
+prop_integral_pow _ e 1    = e^^(1 :: Integer) === e
 prop_integral_pow _ e n | n > 0     = e^^n === IntPowE e n
                         | otherwise = e^^n === FracPowE e n
 
@@ -60,7 +52,5 @@ powPevalTests =
         it "integral powers" $
           property $ prop_integral_pow (Proxy :: Proxy Double) (x-1)
   where
-    x, y, z :: Exp a
+    x :: Exp a
     x = VarE "x"
-    y = VarE "y"
-    z = VarE "z"

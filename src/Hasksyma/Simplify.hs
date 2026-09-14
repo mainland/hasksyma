@@ -510,7 +510,7 @@ simp (DiffE (NumBinopE Mul u v) x) =
     u * DiffE v x + v * DiffE u x
 
 simp (DiffE (FracBinopE FDiv u v) x) =
-    (v * DiffE u x - u * DiffE v x) / v ^ 2
+    (v * DiffE u x - u * DiffE v x) / v ^ (2 :: Integer)
 
 simp (DiffE (IntPowE u n) x) =
     fromIntegral n * u ^^ (n-1) * DiffE u x

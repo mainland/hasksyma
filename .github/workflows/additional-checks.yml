@@ -53,6 +53,7 @@ jobs:
           hasksyma:test:full
           --enable-tests
           --flags=-partial-evaluation
+          --ghc-options=-Werror
           --test-show-details=direct
 
   cyclotomic:
@@ -84,4 +85,5 @@ jobs:
           --project-file=cabal.project.cyclotomic
           hasksyma:test:full
           --enable-tests
+          --ghc-options=-Werror
           --test-show-details=direct

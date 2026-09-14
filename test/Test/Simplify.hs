@@ -9,7 +9,6 @@
 
 module Test.Simplify where
 
-import           Control.Applicative             (empty, (<|>))
 import           Control.Monad                   (forM_)
 import           Test.Hspec
 import           Test.HUnit

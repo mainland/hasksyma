@@ -386,10 +386,10 @@ instance Floating (Const Float) where
     log E = 1
     log x = liftFloating log x
 
-    sqrt (IntegerC x) | y^2 == x = IntegerC y
+    sqrt (IntegerC x) | y*y == x = IntegerC y
       where
         y :: Integer
-        y = ceiling (sqrt (fromInteger x))
+        y = ceiling (sqrt (fromInteger x :: Double))
 #if defined(CYCLOTOMIC)
     sqrt (IntegerC x)  = RealCycC $ RealCyc.sqrtRat (fromInteger x)
     sqrt (RationalC x) = RealCycC $ RealCyc.sqrtRat x
@@ -431,10 +431,10 @@ instance Floating (Const Double) where
     log E = 1
     log x = liftFloating log x
 
-    sqrt (IntegerC x) | y^2 == x = IntegerC y
+    sqrt (IntegerC x) | y*y == x = IntegerC y
       where
         y :: Integer
-        y = ceiling (sqrt (fromInteger x))
+        y = ceiling (sqrt (fromInteger x :: Double))
 #if defined(CYCLOTOMIC)
     sqrt (IntegerC x)  = RealCycC $ RealCyc.sqrtRat (fromInteger x)
     sqrt (RationalC x) = RealCycC $ RealCyc.sqrtRat x
@@ -476,10 +476,10 @@ instance RealFloat a => Floating (Const (Complex a)) where
     log E = 1
     log x = liftFloating log x
 
-    sqrt (IntegerC x) | y^2 == x = IntegerC y
+    sqrt (IntegerC x) | y*y == x = IntegerC y
       where
         y :: Integer
-        y = ceiling (sqrt (fromInteger x))
+        y = ceiling (sqrt (fromInteger x :: Double))
 #if defined(CYCLOTOMIC)
     sqrt (IntegerC x)  = CycC $ Cyc.sqrtInteger x
     sqrt (RationalC x) = CycC $ Cyc.sqrtRat x
