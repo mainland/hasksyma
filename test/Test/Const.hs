@@ -1,7 +1,8 @@
-{-# LANGUAGE CPP               #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RankNTypes                 #-}
 
 -- |
 -- Module      :  Test.Const
@@ -14,14 +15,21 @@ module Test.Const where
 #if defined(CYCLOTOMIC)
 import           Control.Exception (evaluate)
 import           Control.Monad     (forM_)
-import           Test.Hspec        (errorCall, shouldBe, shouldThrow)
+import           Data.Complex      (Complex ((:+)))
+import           Test.Hspec        (errorCall, shouldThrow)
 #endif
 import           Data.Proxy        (Proxy (Proxy))
-import           Test.Hspec        (Spec, describe, it)
+import           Test.Hspec        (Spec, describe, it, shouldBe)
 import           Test.QuickCheck
 
 import           Hasksyma.Const
 import           Test.Arbitrary    ()
+
+-- Exercise the class defaults without a type-specific constant interpreter.
+newtype WithDefaultConst a = WithDefaultConst a
+    deriving (Eq, Ord, Show, Num, Fractional, Floating, Real, RealFrac, RealFloat)
+
+instance IsConst (WithDefaultConst a)
 
 class (Eq a, Show a) => Equiv a where
     equiv :: a -> a -> Property
@@ -128,7 +136,24 @@ prop_float2_equiv _ (FloatBinop _ f p) x y = p x y ==> fromConst (f x y) `equiv`
 
 constTests :: Spec
 constTests = describe "Computations with constants" $ do
+    describe "Default constant projection" $ do
+      it "projects an evaluated value without numeric constraints" $
+        fromConst (Const (WithDefaultConst True)) `shouldBe` WithDefaultConst True
+      it "projects an exact integer" $
+        (fromConst (IntegerC 123) :: WithDefaultConst Integer) `shouldBe` WithDefaultConst 123
+      it "projects an exact rational" $
+        (fromConst (RationalC (2/3)) :: WithDefaultConst Rational) `shouldBe` WithDefaultConst (2/3)
+      it "projects a rational multiple of pi" $
+        (fromConst (Pi (2/3)) :: WithDefaultConst Double) `shouldBe` WithDefaultConst ((2/3) * pi)
+      it "projects Euler's number" $
+        (fromConst E :: WithDefaultConst Double) `shouldBe` WithDefaultConst (exp 1)
+
 #if defined(CYCLOTOMIC)
+      it "projects a real cyclotomic value through the class default" $
+        (fromConst (RealCycC (3/2)) :: WithDefaultConst Double) `shouldBe` WithDefaultConst (3/2)
+      it "projects a complex cyclotomic value" $
+        (fromConst (CycC (3/2)) :: Complex Double) `shouldBe` (3/2 :+ 0)
+
     describe "Real cyclotomic magnitude and sign" $ do
       it "preserves exact magnitudes and signs of rational values" $
         forM_ [-3/2, 0, 5/3] $ \q -> do

@@ -82,11 +82,19 @@ data Const a where
 class IsConst a where
     -- | Project a value of type @a@ from a @t'Const' a@.
     --
-    -- The default implementation accepts only the v'Const' constructor.
-    -- Instances must handle any other constructors they support.
+    -- The default implementation evaluates every constructor using its
+    -- numeric constraints, so instances need only override this method to
+    -- customize conversion.
     fromConst :: Const a -> a
-    fromConst (Const x) = x
-    fromConst _         = error "can't happen"
+    fromConst (Const x)     = x
+    fromConst (Pi k)        = fromRational k * pi
+    fromConst E             = exp 1
+    fromConst (IntegerC x)  = fromInteger x
+    fromConst (RationalC x) = fromRational x
+#if defined(CYCLOTOMIC)
+    fromConst (RealCycC x)  = RealCyc.toReal x
+    fromConst (CycC x)      = fromCyclotomic x
+#endif /* defined(CYCLOTOMIC) */
 
     -- | Construct a value of type @t'Const' a@ from a value of type @a@.
     toConst :: a -> Const a
@@ -176,61 +184,19 @@ fromRealCyclotomic x = fromJust (Cyc.toReal x :: Maybe a)
 #endif /* defined(CYCLOTOMIC) */
 
 instance IsConst Int where
-    fromConst (Const x)    = x
-    fromConst (IntegerC x) = fromInteger x
-    fromConst _            = error "can't happen"
-
     toConst = IntegerC . fromIntegral
 
 instance IsConst Integer where
-    fromConst (Const x)    = x
-    fromConst (IntegerC x) = fromInteger x
-    fromConst _            = error "can't happen"
-
     toConst = IntegerC
 
-instance IsConst Float where
-    fromConst (Const x)     = x
-    fromConst (Pi k)        = fromRational k * pi
-    fromConst E             = exp 1
-    fromConst (IntegerC x)  = fromInteger x
-    fromConst (RationalC x) = fromRational x
-#if defined(CYCLOTOMIC)
-    fromConst (RealCycC x)  = RealCyc.toReal x
-#endif /* defined(CYCLOTOMIC) */
+instance IsConst Float
 
-instance IsConst Double where
-    fromConst (Const x)     = x
-    fromConst (Pi k)        = fromRational k * pi
-    fromConst E             = exp 1
-    fromConst (IntegerC x)  = fromInteger x
-    fromConst (RationalC x) = fromRational x
-#if defined(CYCLOTOMIC)
-    fromConst (RealCycC x)  = RealCyc.toReal x
-#endif /* defined(CYCLOTOMIC) */
+instance IsConst Double
 
 instance IsConst Rational where
-    fromConst (Const x)     = x
-    fromConst (Pi k)        = fromRational k * pi
-    fromConst E             = exp 1
-    fromConst (IntegerC x)  = fromInteger x
-    fromConst (RationalC x) = x
-#if defined(CYCLOTOMIC)
-    fromConst (RealCycC x)  = RealCyc.toReal x
-#endif /* defined(CYCLOTOMIC) */
-
     toConst = RationalC
 
-instance RealFloat a => IsConst (Complex a) where
-    fromConst (Const x)     = x
-    fromConst (Pi k)        = fromRational k * pi
-    fromConst E             = exp 1
-    fromConst (IntegerC x)  = fromInteger x
-    fromConst (RationalC x) = fromRational x
-#if defined(CYCLOTOMIC)
-    fromConst (RealCycC x)  = RealCyc.toReal x
-    fromConst (CycC x)      = fromCyclotomic x
-#endif /* defined(CYCLOTOMIC) */
+instance RealFloat a => IsConst (Complex a)
 
 -- | Lift a unary operation on @'Num'@ type class to the type @t'Const' a@.
 liftNum :: (IsConst b, Num b)
