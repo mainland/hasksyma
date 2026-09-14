@@ -10,7 +10,15 @@ stability:     alpha
 homepage:      https://github.com/mainland/hasksyma
 category:      Language
 synopsis:      Symbolic expressions
-extra-source-files: .ghci
+extra-doc-files: README.md
+extra-source-files:
+  .ghci
+  .dockerignore
+  .hlint.yaml
+  .stylish-haskell.yaml
+  cabal.project
+  cabal.project.cyclotomic
+  Dockerfile
 tested-with:   GHC==9.10.3,
                GHC==9.12.4,
                GHC==9.14.1

@@ -1,0 +1,4 @@
+.git
+dist-newstyle
+*.tar.gz
+notebooks/.ipynb_checkpoints
