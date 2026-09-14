@@ -7,6 +7,9 @@
 -- Copyright   :  (c) 2017-2023 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
+--
+-- LaTeX rendering independent of notebook support. The @displayMath@ helper
+-- has moved to "Hasksyma.IHaskell" in the public @hasksyma:ihaskell@ sublibrary.
 
 module Hasksyma.LaTeX
     ( PrettyTeX(..),
@@ -18,8 +21,6 @@ module Hasksyma.LaTeX
       nicefrac,
 
       tinfixop,
-
-      displayMath,
     ) where
 
 import Data.Complex (Complex(..))
@@ -35,8 +36,6 @@ import Data.Ratio ( Ratio, numerator, denominator )
 import Data.Set ( Set )
 import qualified Data.Set as Set
 import qualified Data.Text as T
-import IHaskell.Display
-    ( latex, Display, IHaskellDisplay(display) )
 import Text.LaTeX
     ( IsString(fromString),
       LaTeX,
@@ -213,9 +212,6 @@ tinfixop prec (Fixity opAssoc opPrec) op l r =
 
     rightPrec | opAssoc == LeftAssoc = opPrec + 1
               | otherwise            = opPrec
-
-displayMath :: PrettyTeX a => a -> IO Display
-displayMath = display . IHaskell.Display.latex . T.unpack . render . math . tppr
 
 instance Pretty LaTeX where
     ppr = strictText . render . math

@@ -12,6 +12,11 @@
 -- Copyright   :  (c) 2023 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
+--
+-- Symbolic constants. Notebook display instances are provided separately by
+-- "Hasksyma.IHaskell" in the public @hasksyma:ihaskell@ sublibrary.
+-- QuickCheck instances are now test-only. Downstream tests that need
+-- 'Const' generators must provide their own instances or explicit generators.
 
 module Hasksyma.Const (
   Const(..),
@@ -20,7 +25,6 @@ module Hasksyma.Const (
 ) where
 
 import Data.Complex ( Complex(..) )
-import IHaskell.Display ( IHaskellDisplay(..) )
 #if defined(CYCLOTOMIC)
 import Data.Complex.Cyclotomic ( Cyclotomic(..) )
 import qualified Data.Complex.Cyclotomic as Cyc
@@ -38,9 +42,7 @@ import Text.PrettyPrint.Mainland.Class ( Pretty(pprPrec) )
 #if defined(CYCLOTOMIC)
 import Text.PrettyPrint.Mainland.Class ( Pretty(ppr) )
 #endif /* defined(CYCLOTOMIC) */
-import Test.QuickCheck ( Arbitrary(arbitrary), frequency, oneof )
-
-import Hasksyma.LaTeX ( displayMath, PrettyTeX(tppr) )
+import Hasksyma.LaTeX ( PrettyTeX(tppr) )
 import Hasksyma.Pretty ( appPrec, appPrec1, mulPrec, mulPrec1 )
 #if defined(CYCLOTOMIC)
 import Hasksyma.Pretty ( addPrec )
@@ -497,47 +499,6 @@ instance RealFloat a => Floating (Const (Complex a)) where
     acosh = liftFloating acosh
     atanh = liftFloating atanh
 
-instance Arbitrary (Const Integer) where
-    arbitrary = oneof [Const <$> arbitrary, IntegerC <$> arbitrary]
-
-instance Arbitrary (Const Rational) where
-    arbitrary = oneof [ Const <$> arbitrary
-                      , IntegerC <$> arbitrary
-                      , RationalC <$> arbitrary
-                      ]
-
-instance Arbitrary (Const Float) where
-    arbitrary = frequency [ (10, Const <$> arbitrary)
-                          , (1, pure E)
-                          , (1, Pi <$> arbitrary)
-                          , (10, IntegerC <$> arbitrary)
-                          , (10, RationalC <$> arbitrary)
-                          ]
-
-instance Arbitrary (Const Double) where
-    arbitrary = frequency [ (10, Const <$> arbitrary)
-                          , (1, pure E)
-                          , (1, Pi <$> arbitrary)
-                          , (10, IntegerC <$> arbitrary)
-                          , (10, RationalC <$> arbitrary)
-                          ]
-
-instance Arbitrary (Const (Complex Float)) where
-    arbitrary = frequency [ (10, Const <$> arbitrary)
-                          , (1, pure E)
-                          , (1, Pi <$> arbitrary)
-                          , (10, IntegerC <$> arbitrary)
-                          , (10, RationalC <$> arbitrary)
-                          ]
-
-instance Arbitrary (Const (Complex Double)) where
-    arbitrary = frequency [ (10, Const <$> arbitrary)
-                          , (1, pure E)
-                          , (1, Pi <$> arbitrary)
-                          , (10, IntegerC <$> arbitrary)
-                          , (10, RationalC <$> arbitrary)
-                          ]
-
 #if defined(CYCLOTOMIC)
 instance Pretty Cyclotomic where
     pprPrec p (Cyclotomic n0 mp) =
@@ -606,6 +567,3 @@ instance PrettyTeX a => PrettyTeX (Const a) where
     tppr (RealCycC x)  = tppr x
     tppr (CycC x)      = tppr x
 #endif /* defined(CYCLOTOMIC) */
-
-instance PrettyTeX a => IHaskellDisplay (Const a) where
-    display = displayMath

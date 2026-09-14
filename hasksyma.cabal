@@ -1,7 +1,7 @@
+cabal-version: 3.4
 name:          hasksyma
 version:       0.1
-cabal-version: >= 1.10
-license:       BSD3
+license:       BSD-3-Clause
 license-file:  LICENSE
 copyright:     (c) 2023 Drexel University
 author:        Geoffrey Mainland <mainland@drexel.edu>
@@ -12,7 +12,8 @@ category:      Language
 synopsis:      Symbolic expressions
 extra-source-files: .ghci
 tested-with:   GHC==9.10.3,
-               GHC==9.12.4
+               GHC==9.12.4,
+               GHC==9.14.1
 
 description:
   Symbolic expressions.
@@ -21,6 +22,11 @@ build-type: Simple
 
 flag cyclotomic
     description: Enable support for cyclotomic numbers
+    manual: True
+    default: False
+
+flag ihaskell
+    description: Enable notebook display support
     manual: True
     default: False
 
@@ -47,12 +53,10 @@ library
   build-depends:
     base            >= 4.20  && < 4.23,
     containers      >= 0.6   && < 0.9,
-    ihaskell        >= 0.10  && < 0.14,
     mainland-pretty >= 0.7   && < 0.8,
     symbol          >= 0.2.4 && < 0.3,
     text            >= 1.2   && < 2.2,
-    HaTeX           >= 3.21  && < 3.24,
-    QuickCheck      >= 2.13  && < 2.18
+    HaTeX           >= 3.21  && < 3.24
 
   ghc-options:
     -Wall
@@ -64,6 +68,29 @@ library
   if flag(partial-evaluation)
     cpp-options: -DPEVAL
 
+library ihaskell
+  visibility: public
+  hs-source-dirs: ihaskell
+  exposed-modules: Hasksyma.IHaskell
+  default-language: Haskell2010
+
+  if !flag(ihaskell)
+    buildable: False
+
+  -- The released IHaskell dependency requires ghc <9.13.
+  if impl(ghc >= 9.13)
+    buildable: False
+
+  build-depends:
+    base            >= 4.20  && < 4.23,
+    hasksyma:hasksyma,
+    HaTeX           >= 3.21  && < 3.24,
+    ihaskell        >= 0.13  && < 0.14,
+    text            >= 1.2   && < 2.2
+
+  ghc-options:
+    -Wall
+
 test-suite full
   type: exitcode-stdio-1.0
   main-is: Main.hs
@@ -72,6 +99,7 @@ test-suite full
     test
 
   other-modules:
+    Test.Arbitrary
     Test.Const
     Test.Diff
     Test.Eval

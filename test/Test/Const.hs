@@ -16,6 +16,7 @@ import Test.Hspec ( describe, it, Spec )
 import Test.QuickCheck
 
 import Hasksyma.Const
+import Test.Arbitrary ()
 
 class (Eq a, Show a) => Equiv a where
     equiv :: a -> a -> Property

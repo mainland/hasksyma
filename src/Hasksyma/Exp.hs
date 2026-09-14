@@ -12,6 +12,9 @@
 -- Copyright   :  (c) 2023 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
+--
+-- Notebook display instances are provided separately by "Hasksyma.IHaskell"
+-- in the public @hasksyma:ihaskell@ sublibrary. Import that module to enable them.
 
 module Hasksyma.Exp (
   Var(..),
@@ -47,7 +50,6 @@ module Hasksyma.Exp (
 ) where
 
 import Data.Symbol ( unintern, Symbol )
-import IHaskell.Display ( IHaskellDisplay(..) )
 import Text.LaTeX
     ( IsString(..), (!:), (^:), autoBrackets, operatorname, tsqrt )
 import Text.LaTeX.Base.Class ( braces, comm1, commS, LaTeXC )
@@ -60,8 +62,7 @@ import Hasksyma.LaTeX
     ( PrettyTeX(tpprPrec, tppr),
       autoParensIf,
       mathrel,
-      tinfixop,
-      displayMath )
+      tinfixop )
 import Hasksyma.Pretty
     ( HasFixity(..),
       Fixity,
@@ -705,6 +706,3 @@ instance (PrettyTeX a, Num a, Eq a, IsConst a) => PrettyTeX (Exp a) where
 
     tpprPrec _ (IntE (Just (l, u)) e x) =
         integralFromTo (tppr l) (tppr u) <> tpprPrec addPrec1 e <> commS "," <> ("d" <> tppr x)
-
-instance PrettyTeX (Exp a) => IHaskellDisplay (Exp a) where
-    display = displayMath

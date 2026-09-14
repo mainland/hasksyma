@@ -13,7 +13,16 @@ diff --git a/.github/workflows/haskell-ci.yml b/.github/workflows/haskell-ci.yml
  jobs:
    linux:
      name: Haskell CI - Linux - ${{ matrix.compiler }}
-@@ -131,7 +136,7 @@
+@@ -84,6 +89,8 @@
+           echo "HCNUMVER=$HCNUMVER" >> "$GITHUB_ENV"
+           echo "ARG_TESTS=--enable-tests" >> "$GITHUB_ENV"
+           echo "ARG_BENCH=--enable-benchmarks" >> "$GITHUB_ENV"
++          echo "TARGET_CORE=hasksyma:lib:hasksyma" >> "$GITHUB_ENV"
++          echo "TARGET_TEST=hasksyma:test:full" >> "$GITHUB_ENV"
+           echo "HEADHACKAGE=false" >> "$GITHUB_ENV"
+           echo "ARG_COMPILER=--$HCKIND --with-compiler=$HC" >> "$GITHUB_ENV"
+         env:
+@@ -135,7 +142,7 @@
            chmod a+x $HOME/.cabal/bin/cabal-plan
            cabal-plan --version
        - name: checkout
@@ -22,8 +31,12 @@ diff --git a/.github/workflows/haskell-ci.yml b/.github/workflows/haskell-ci.yml
          with:
            path: source
        - name: initial cabal.project for sdist
-@@ -171,7 +176,7 @@
-           $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH --dry-run all
+@@ -172,41 +179,41 @@
+           cat cabal.project.local
+       - name: dump install plan
+         run: |
+-          $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH --dry-run all
++          $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH --dry-run $TARGET_CORE $TARGET_TEST
            cabal-plan
        - name: restore cache
 -        uses: actions/cache/restore@v6
@@ -31,8 +44,38 @@ diff --git a/.github/workflows/haskell-ci.yml b/.github/workflows/haskell-ci.yml
          with:
            key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
            path: ~/.cabal/store
-@@ -202,7 +207,7 @@
-           $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks all
+           restore-keys: ${{ runner.os }}-${{ matrix.compiler }}-
+       - name: install dependencies
+         run: |
+-          $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks --dependencies-only -j2 all
+-          $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH --dependencies-only -j2 all
++          $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks --dependencies-only -j2 $TARGET_CORE
++          $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH --dependencies-only -j2 $TARGET_CORE $TARGET_TEST
+       - name: build w/o tests
+         run: |
+-          $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks all
++          $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks $TARGET_CORE
+       - name: build
+         run: |
+-          $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH all --write-ghc-environment-files=always
++          $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH $TARGET_CORE $TARGET_TEST --write-ghc-environment-files=always
+       - name: tests
+         run: |
+-          $CABAL v2-test $ARG_COMPILER $ARG_TESTS $ARG_BENCH all --test-show-details=direct
++          $CABAL v2-test $ARG_COMPILER $ARG_TESTS $ARG_BENCH $TARGET_TEST --test-show-details=direct
+       - name: cabal check
+         run: |
+           cd ${PKGDIR_hasksyma} || false
+           ${CABAL} -vnormal check
+       - name: haddock
+         run: |
+-          $CABAL v2-haddock --disable-documentation $ARG_COMPILER --with-haddock $HADDOCK $ARG_TESTS $ARG_BENCH all
++          $CABAL v2-haddock --disable-documentation $ARG_COMPILER --with-haddock $HADDOCK $ARG_TESTS $ARG_BENCH $TARGET_CORE
+       - name: unconstrained build
+         run: |
+           rm -f cabal.project.local
+-          $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks all
++          $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks $TARGET_CORE
        - name: save cache
          if: always()
 -        uses: actions/cache/save@v6
