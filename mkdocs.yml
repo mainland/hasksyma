@@ -1,0 +1,34 @@
+site_name: Hasksyma
+site_description: A small computer algebra system embedded in Haskell
+site_url: https://hasksyma.readthedocs.io/
+repo_url: https://github.com/mainland/hasksyma
+repo_name: mainland/hasksyma
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Configuration: configuration.md
+  - Development: development.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js
+
+strict: true

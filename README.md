@@ -13,6 +13,20 @@ play on [Macsyma](https://en.wikipedia.org/wiki/Macsyma).
 All package components use GHC2024. GHCup is the recommended way to install
 the Haskell toolchain.
 
+## Documentation
+
+The user guide is built with MkDocs and MathJax. To preview it locally:
+
+```console
+python3 -m venv .venv-docs
+. .venv-docs/bin/activate
+python -m pip install -r docs/requirements.txt
+mkdocs serve
+```
+
+Use `mkdocs build --strict` to perform the same validation as CI and Read the
+Docs. Generated files are written to `site/` and are not tracked.
+
 ## Build and test
 
 Build the reusable core library:

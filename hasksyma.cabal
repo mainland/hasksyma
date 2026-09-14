@@ -10,8 +10,17 @@ stability:     alpha
 homepage:      https://github.com/mainland/hasksyma
 category:      Language
 synopsis:      Symbolic expressions
-extra-doc-files: README.md
+extra-doc-files:
+  README.md
+  docs/configuration.md
+  docs/development.md
+  docs/getting-started.md
+  docs/index.md
 extra-source-files:
+  .readthedocs.yaml
+  docs/javascripts/mathjax.js
+  docs/requirements.txt
+  mkdocs.yml
   .ghci
   .dockerignore
   .hlint.yaml

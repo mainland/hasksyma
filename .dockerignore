@@ -1,4 +1,6 @@
 .git
 dist-newstyle
+site
+.venv-docs
 *.tar.gz
 notebooks/.ipynb_checkpoints

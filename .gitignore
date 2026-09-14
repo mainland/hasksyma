@@ -1,4 +1,6 @@
 dist-newstyle/
+site/
+.venv-docs/
 cabal.project.local
 .ghc.environment.*
 
