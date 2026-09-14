@@ -11,7 +11,20 @@
 --
 -- Heuristic symbolic integration and its factorization utilities.
 
-module Hasksyma.Integrate where
+module Hasksyma.Integrate
+  ( Factors (..),
+    factorize,
+    unfactorize,
+    fvs,
+    freeOf,
+    heuristicIntegrate,
+    intFactors,
+    derivDivides,
+    divideFactors,
+    tableIntegrate,
+    deriv,
+  )
+where
 
 import           Control.Monad
 import           Data.List         (partition)

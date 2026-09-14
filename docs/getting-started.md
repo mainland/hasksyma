@@ -29,17 +29,17 @@ cabal repl hasksyma:lib:hasksyma
 
 The checked-in `.ghci` file provides startup settings and a pretty-printer.
 These commands enable overloaded string literals explicitly and import the
-modules needed for the example:
+complete public core API:
 
 ```haskell
 :set -XOverloadedStrings
 
-import Hasksyma.Diff (diff)
-import Hasksyma.Exp (Exp (VarE))
-import Hasksyma.Simplify (simplify)
+import Hasksyma
 
 let x = VarE "x" :: Exp Double
 ```
+
+For tighter control over names, import the individual modules instead.
 
 The standard numeric classes construct symbolic syntax, so ordinary Haskell
 operators can build expressions:

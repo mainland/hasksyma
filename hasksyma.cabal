@@ -66,6 +66,7 @@ common common-settings
 library
   import: common-settings
   hs-source-dirs: src
+  ghc-options: -Wmissing-export-lists
 
   exposed-modules:
     Hasksyma
@@ -97,6 +98,7 @@ library ihaskell
   import: common-settings
   visibility: public
   hs-source-dirs: ihaskell
+  ghc-options: -Wmissing-export-lists
   exposed-modules: Hasksyma.IHaskell
 
   if !flag(ihaskell)
