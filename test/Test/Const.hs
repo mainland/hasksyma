@@ -78,6 +78,13 @@ prop_num_equiv :: (IsConst a, Num a, Equiv a)
                -> NumBinop -> Const a -> Const a -> Property
 prop_num_equiv _ (NumBinop _ f) x y = fromConst (f x y) `equiv` f (fromConst x) (fromConst y)
 
+prop_integral_exact :: (forall a . Integral a => a -> a -> a)
+                    -> Integer -> NonZero Integer -> Property
+prop_integral_exact f x (NonZero y) = within 1000000 $
+    case f (IntegerC x :: Const Integer) (IntegerC y) of
+      IntegerC z -> z === f x y
+      z          -> counterexample ("Expected an exact integer, got " ++ show z) False
+
 data FracBinop = FracBinop String (forall a . Fractional a => a -> a -> a) (forall a . (Eq a, Fractional a) => a -> a -> Bool)
 
 instance Show FracBinop where
@@ -183,6 +190,16 @@ constTests = describe "Computations with constants" $ do
         property $ prop_num_equiv (Proxy :: Proxy Float)
     it "Num operations over Double correct" $
         property $ prop_num_equiv (Proxy :: Proxy Double)
+
+    describe "Exact integral operations" $ do
+      it "quot preserves exactness and agrees with Integer" $
+        property $ prop_integral_exact quot
+      it "rem preserves exactness and agrees with Integer" $
+        property $ prop_integral_exact rem
+      it "div preserves exactness and agrees with Integer" $
+        property $ prop_integral_exact div
+      it "mod preserves exactness and agrees with Integer" $
+        property $ prop_integral_exact mod
 
     it "Fractional operations over Rational correct" $
         property $ prop_frac_equiv (Proxy :: Proxy Rational)

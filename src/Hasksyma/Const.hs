@@ -227,14 +227,15 @@ liftNum2 f (CycC x)      (CycC y)      = CycC (f x y)
 #endif /* defined(CYCLOTOMIC) */
 liftNum2 f x             y             = joinWith (liftNum2 f) x y
 
+-- | Lift a binary operation on 'Integral' to the type @t'Const' b@.
 liftIntegral2 :: (IsConst b, Integral b)
               => (forall a . Integral a => a -> a -> a)
               -> Const b
               -> Const b
               -> Const b
--- | Lift a binary operation on 'Integral' to the type 'b
-liftIntegral2 f (Const x) (Const y) = Const (f x y)
-liftIntegral2 f x          y        = joinWith (liftIntegral2 f) x y
+liftIntegral2 f (Const x)    (Const y)    = Const (f x y)
+liftIntegral2 f (IntegerC x) (IntegerC y) = IntegerC (f x y)
+liftIntegral2 f x            y            = joinWith (liftIntegral2 f) x y
 
 instance (IsConst a, Num a) => Num (Const a) where
     Pi k1 + Pi k2 = Pi (k1 + k2)
