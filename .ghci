@@ -1,0 +1,3 @@
+:set -XOverloadedStrings
+:set -Wno-type-defaults
+:set -interactive-print=Text.PrettyPrint.Mainland.Class.pprint

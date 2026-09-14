@@ -1,0 +1,11 @@
+-- Regenerate .github/workflows/haskell-ci.yml with:
+--
+--   haskell-ci regenerate
+
+cabal-install-version: 3.16.1.0
+distribution: noble
+docspec: False
+github-action-name: Haskell CI
+github-patches: .github/haskell-ci.patch
+haddock-components: libs
+timeout-minutes: 30

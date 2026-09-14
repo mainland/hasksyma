@@ -1,2 +1,6 @@
-.stack-work/
-stack.yaml.lock
+dist-newstyle/
+cabal.project.local
+.ghc.environment.*
+
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/

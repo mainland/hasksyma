@@ -8,55 +8,41 @@
 #
 # For more information, see https://github.com/haskell-CI/haskell-ci
 #
-# version: 0.19.20251118
+# version: 0.19.20260901
 #
-# REGENDATA ("0.19.20251118",["github","cabal.project","--apt","libzmq3-dev pkg-config"])
+# REGENDATA ("0.19.20260901",["github","cabal.project","--apt","libzmq3-dev pkg-config"])
 #
-name: Haskell-CI
+name: Haskell CI
 on:
   - push
   - pull_request
   - merge_group
+  - workflow_dispatch
+permissions:
+  contents: read
+concurrency:
+  group: haskell-ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   linux:
-    name: Haskell-CI - Linux - ${{ matrix.compiler }}
+    name: Haskell CI - Linux - ${{ matrix.compiler }}
     runs-on: ubuntu-24.04
     timeout-minutes:
-      60
+      30
     container:
-      image: buildpack-deps:jammy
+      image: buildpack-deps:noble
     continue-on-error: ${{ matrix.allow-failure }}
     strategy:
       matrix:
         include:
-          - compiler: ghc-9.12.2
+          - compiler: ghc-9.12.4
             compilerKind: ghc
-            compilerVersion: 9.12.2
+            compilerVersion: 9.12.4
             setup-method: ghcup
             allow-failure: false
           - compiler: ghc-9.10.3
             compilerKind: ghc
             compilerVersion: 9.10.3
-            setup-method: ghcup
-            allow-failure: false
-          - compiler: ghc-9.8.4
-            compilerKind: ghc
-            compilerVersion: 9.8.4
-            setup-method: ghcup
-            allow-failure: false
-          - compiler: ghc-9.6.7
-            compilerKind: ghc
-            compilerVersion: 9.6.7
-            setup-method: ghcup
-            allow-failure: false
-          - compiler: ghc-9.4.8
-            compilerKind: ghc
-            compilerVersion: 9.4.8
-            setup-method: ghcup
-            allow-failure: false
-          - compiler: ghc-9.2.8
-            compilerKind: ghc
-            compilerVersion: 9.2.8
             setup-method: ghcup
             allow-failure: false
       fail-fast: false
@@ -73,8 +59,8 @@ jobs:
           chmod a+x "$HOME/.ghcup/bin/ghcup"
       - name: Install cabal-install
         run: |
-          "$HOME/.ghcup/bin/ghcup" install cabal 3.16.0.0 || (cat "$HOME"/.ghcup/logs/*.* && false)
-          echo "CABAL=$HOME/.ghcup/bin/cabal-3.16.0.0 -vnormal+nowrap" >> "$GITHUB_ENV"
+          "$HOME/.ghcup/bin/ghcup" install cabal 3.16.1.0 || (cat "$HOME"/.ghcup/logs/*.* && false)
+          echo "CABAL=$HOME/.ghcup/bin/cabal-3.16.1.0 -vnormal+nowrap" >> "$GITHUB_ENV"
       - name: Install GHC (GHCup)
         if: matrix.setup-method == 'ghcup'
         run: |
@@ -150,7 +136,7 @@ jobs:
           chmod a+x $HOME/.cabal/bin/cabal-plan
           cabal-plan --version
       - name: checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: source
       - name: initial cabal.project for sdist
@@ -176,15 +162,11 @@ jobs:
           echo "packages: ${PKGDIR_hasksyma}" >> cabal.project
           echo "package hasksyma" >> cabal.project
           echo "    ghc-options: -Werror=missing-methods -Werror=missing-fields" >> cabal.project
-          if [ $((HCNUMVER >= 90400)) -ne 0 ] ; then echo "package hasksyma" >> cabal.project ; fi
-          if [ $((HCNUMVER >= 90400)) -ne 0 ] ; then echo "    ghc-options: -Werror=unused-packages" >> cabal.project ; fi
+          echo "package hasksyma" >> cabal.project
+          echo "    ghc-options: -Werror=unused-packages" >> cabal.project
           echo "package hasksyma" >> cabal.project
           echo "    ghc-options: -Werror=incomplete-patterns -Werror=incomplete-uni-patterns" >> cabal.project
           cat >> cabal.project <<EOF
-          source-repository-package
-            type:     git
-            location: https://github.com/mainland/cyclotomic
-            tag:      edb448188d162c664f9b2ded65ebf4bb5ab7c88d
           EOF
           $HCPKG list --simple-output --names-only | perl -ne 'for (split /\s+/) { print "constraints: any.$_ installed\n" unless /^(hasksyma)$/; }' >> cabal.project.local
           cat cabal.project
@@ -194,7 +176,7 @@ jobs:
           $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH --dry-run all
           cabal-plan
       - name: restore cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
           path: ~/.cabal/store
@@ -218,14 +200,14 @@ jobs:
           ${CABAL} -vnormal check
       - name: haddock
         run: |
-          $CABAL v2-haddock --disable-documentation --haddock-all $ARG_COMPILER --with-haddock $HADDOCK $ARG_TESTS $ARG_BENCH all
+          $CABAL v2-haddock --disable-documentation $ARG_COMPILER --with-haddock $HADDOCK $ARG_TESTS $ARG_BENCH all
       - name: unconstrained build
         run: |
           rm -f cabal.project.local
           $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks all
       - name: save cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
           path: ~/.cabal/store

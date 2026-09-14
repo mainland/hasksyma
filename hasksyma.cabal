@@ -10,12 +10,9 @@ stability:     alpha
 homepage:      https://github.com/mainland/hasksyma
 category:      Language
 synopsis:      Symbolic expressions
-tested-with:   GHC==9.2.8,
-               GHC==9.4.8,
-               GHC==9.6.7,
-               GHC==9.8.4,
-               GHC==9.10.3,
-               GHC==9.12.2
+extra-source-files: .ghci
+tested-with:   GHC==9.10.3,
+               GHC==9.12.4
 
 description:
   Symbolic expressions.
@@ -47,7 +44,7 @@ library
     Hasksyma.Simplify
 
   build-depends:
-    base            >= 4.12  && < 4.22,
+    base            >= 4.20  && < 4.23,
     containers      >= 0.6   && < 0.9,
     ihaskell        >= 0.10  && < 0.14,
     mainland-pretty >= 0.7   && < 0.8,
@@ -84,7 +81,7 @@ test-suite full
 
   build-depends:
     hasksyma,
-    base            >= 4.12 && < 4.22,
+    base            >= 4.20 && < 4.23,
     hspec           >= 2.9  && < 2.12,
     mainland-pretty >= 0.7  && < 0.8,
     HUnit           >= 1.6  && < 1.7,

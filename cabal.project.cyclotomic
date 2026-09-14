@@ -1,0 +1,9 @@
+import: cabal.project
+
+package hasksyma
+  flags: +cyclotomic
+
+source-repository-package
+  type: git
+  location: https://github.com/mainland/cyclotomic
+  tag: edb448188d162c664f9b2ded65ebf4bb5ab7c88d

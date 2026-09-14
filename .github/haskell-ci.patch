@@ -1,0 +1,42 @@
+diff --git a/.github/workflows/haskell-ci.yml b/.github/workflows/haskell-ci.yml
+--- a/.github/workflows/haskell-ci.yml
++++ b/.github/workflows/haskell-ci.yml
+@@ -18,6 +18,11 @@
+   - pull_request
+   - merge_group
+   - workflow_dispatch
++permissions:
++  contents: read
++concurrency:
++  group: haskell-ci-${{ github.ref }}
++  cancel-in-progress: true
+ jobs:
+   linux:
+     name: Haskell CI - Linux - ${{ matrix.compiler }}
+@@ -131,7 +136,7 @@
+           chmod a+x $HOME/.cabal/bin/cabal-plan
+           cabal-plan --version
+       - name: checkout
+-        uses: actions/checkout@v7
++        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+           path: source
+       - name: initial cabal.project for sdist
+@@ -171,7 +176,7 @@
+           $CABAL v2-build $ARG_COMPILER $ARG_TESTS $ARG_BENCH --dry-run all
+           cabal-plan
+       - name: restore cache
+-        uses: actions/cache/restore@v6
++        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+         with:
+           key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
+           path: ~/.cabal/store
+@@ -202,7 +207,7 @@
+           $CABAL v2-build $ARG_COMPILER --disable-tests --disable-benchmarks all
+       - name: save cache
+         if: always()
+-        uses: actions/cache/save@v6
++        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+         with:
+           key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
+           path: ~/.cabal/store
