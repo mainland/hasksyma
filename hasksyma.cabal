@@ -43,9 +43,12 @@ flag partial-evaluation
     manual: True
     default: True
 
+common common-settings
+  default-language: GHC2024
+
 library
+  import: common-settings
   hs-source-dirs: src
-  default-language: Haskell2010
 
   exposed-modules:
     Hasksyma
@@ -77,10 +80,10 @@ library
     cpp-options: -DPEVAL
 
 library ihaskell
+  import: common-settings
   visibility: public
   hs-source-dirs: ihaskell
   exposed-modules: Hasksyma.IHaskell
-  default-language: Haskell2010
 
   if !flag(ihaskell)
     buildable: False
@@ -100,9 +103,9 @@ library ihaskell
     -Wall
 
 test-suite full
+  import: common-settings
   type: exitcode-stdio-1.0
   main-is: Main.hs
-  default-language: Haskell2010
   hs-source-dirs:
     test
 

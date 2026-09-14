@@ -10,7 +10,8 @@ play on [Macsyma](https://en.wikipedia.org/wiki/Macsyma).
 - GHC 9.10.3, 9.12.4, or 9.14.1
 - cabal-install (3.16.1.0 in CI, 3.14.1.1 in the container)
 
-GHCup is the recommended way to install the Haskell toolchain.
+All package components use GHC2024. GHCup is the recommended way to install
+the Haskell toolchain.
 
 ## Build and test
 
