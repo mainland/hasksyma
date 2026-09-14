@@ -1,5 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RankNTypes       #-}
 
 -- |
 -- Module      :  Hasksyma.Eval
@@ -13,25 +13,11 @@ module Hasksyma.Eval
     evalexact
   ) where
 
-import Hasksyma.Const ( IsConst )
-import Hasksyma.Exp
-    ( Exp(..),
-      numunop,
-      fracunop,
-      floatunop,
-      numbinop,
-      intbinop,
-      fracbinop,
-      floatbinop,
-      liftNum,
-      liftNum2,
-      liftIntegral2,
-      liftFractional,
-      liftFractional2,
-      liftFloating,
-      liftFloating2,
-      liftIntPow,
-      liftFracPow )
+import           Hasksyma.Const (IsConst)
+import           Hasksyma.Exp   (Exp (..), floatbinop, floatunop, fracbinop, fracunop, intbinop,
+                                 liftFloating, liftFloating2, liftFracPow, liftFractional,
+                                 liftFractional2, liftIntPow, liftIntegral2, liftNum, liftNum2,
+                                 numbinop, numunop)
 
 -- | Fully evaluate all closed subexpressions of an expression. Does not
 -- preserve exactness.
@@ -74,13 +60,13 @@ eval e@IntE{}                = e
 -- | Fully evaluate closed subexpressions of an expression when possible while
 -- preserving exactness.
 evalexact :: (IsConst a, Eq a) => Exp a -> Exp a
-evalexact (IntPowE e n)           = liftIntPow (evalexact e) n
-evalexact (FracPowE e n)          = liftFracPow (evalexact e) n
-evalexact (NumUnopE op e)         = liftNum op (evalexact e)
-evalexact (FracUnopE op e)        = liftFractional op (evalexact e)
-evalexact (FloatUnopE op e)       = liftFloating op (evalexact e)
-evalexact (NumBinopE op e1 e2)    = liftNum2 op (evalexact e1) (evalexact e2)
-evalexact (IntBinopE op e1 e2)    = liftIntegral2 op (evalexact e1) (evalexact e2)
-evalexact (FracBinopE op e1 e2)   = liftFractional2 op (evalexact e1) (evalexact e2)
-evalexact (FloatBinopE op e1 e2)  = liftFloating2 op (evalexact e1) (evalexact e2)
-evalexact e                       = e
+evalexact (IntPowE e n)          = liftIntPow (evalexact e) n
+evalexact (FracPowE e n)         = liftFracPow (evalexact e) n
+evalexact (NumUnopE op e)        = liftNum op (evalexact e)
+evalexact (FracUnopE op e)       = liftFractional op (evalexact e)
+evalexact (FloatUnopE op e)      = liftFloating op (evalexact e)
+evalexact (NumBinopE op e1 e2)   = liftNum2 op (evalexact e1) (evalexact e2)
+evalexact (IntBinopE op e1 e2)   = liftIntegral2 op (evalexact e1) (evalexact e2)
+evalexact (FracBinopE op e1 e2)  = liftFractional2 op (evalexact e1) (evalexact e2)
+evalexact (FloatBinopE op e1 e2) = liftFloating2 op (evalexact e1) (evalexact e2)
+evalexact e                      = e

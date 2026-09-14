@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
@@ -9,15 +9,15 @@
 
 module Test.Integrate where
 
-import Control.Applicative ( (<|>), empty )
-import Test.HUnit ( (@?=) )
-import Test.Hspec ( describe, it, Spec )
+import           Control.Applicative (empty, (<|>))
+import           Test.Hspec          (Spec, describe, it)
+import           Test.HUnit          ((@?=))
 
-import Hasksyma.Const
-import Hasksyma.Diff ( diff )
-import Hasksyma.Exp ( Exp(..) )
-import Hasksyma.Integrate
-import Hasksyma.Simplify
+import           Hasksyma.Const
+import           Hasksyma.Diff       (diff)
+import           Hasksyma.Exp        (Exp (..))
+import           Hasksyma.Integrate
+import           Hasksyma.Simplify
 
 integral :: (Show a, Floating a, Floating (Const a)) => Exp a -> Exp a -> Exp a
 integral e (VarE x) = IntE Nothing e x
@@ -32,7 +32,7 @@ integrate e | e' == e   = e
     e' = mapExp int1 e
 
     int1 (IntE Nothing e x) = case heuristicIntegrate e x of
-                                [] -> IntE Nothing e x
+                                []   -> IntE Nothing e x
                                 e':_ -> e'
 
     int1 e = simp e

@@ -1,8 +1,7 @@
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
 
 -- |
 -- Module      :  Test.Simplify
@@ -12,11 +11,10 @@
 
 module Test.Exact where
 
-import Test.Hspec ( describe, it, Spec )
-import Test.QuickCheck
-    ( Arbitrary(arbitrary), oneof, Testable(property) )
+import           Test.Hspec      (Spec, describe, it)
+import           Test.QuickCheck (Arbitrary (arbitrary), Testable (property), oneof)
 
-import Hasksyma.Const
+import           Hasksyma.Const
 
 -- | An exact value of type @'Const' a@
 newtype Exact a = Exact { unExact :: Const a }

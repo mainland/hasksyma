@@ -1,0 +1,13 @@
+---
+- arguments:
+    - -XGHC2024
+- ignore:
+    name: Parenthesize unary negation
+- ignore:
+    name: Use 1
+- ignore:
+    name: Redundant bracket
+    within: Hasksyma.Simplify
+- ignore:
+    name: Eta reduce
+    within: Hasksyma.Const

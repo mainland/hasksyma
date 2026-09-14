@@ -1,10 +1,10 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- |
@@ -24,28 +24,28 @@ module Hasksyma.Const (
   isExact
 ) where
 
-import Data.Complex ( Complex(..) )
+import           Data.Complex                    (Complex (..))
 #if defined(CYCLOTOMIC)
-import Data.Complex.Cyclotomic ( Cyclotomic(..) )
-import qualified Data.Complex.Cyclotomic as Cyc
-import qualified Data.Map as Map
-import Data.Maybe ( fromJust )
-import Data.Number.RealCyclotomic ( RealCyclotomic(..) )
-import qualified Data.Number.RealCyclotomic as RealCyc
+import           Data.Complex.Cyclotomic         (Cyclotomic (..))
+import qualified Data.Complex.Cyclotomic         as Cyc
+import qualified Data.Map                        as Map
+import           Data.Maybe                      (fromJust)
+import           Data.Number.RealCyclotomic      (RealCyclotomic (..))
+import qualified Data.Number.RealCyclotomic      as RealCyc
 #endif /* defined(CYCLOTOMIC) */
-import Text.LaTeX.Base.Class ( comm1, commS )
-import Text.PrettyPrint.Mainland ( (<+>), char, parensIf, text )
+import           Text.LaTeX.Base.Class           (comm1, commS)
+import           Text.PrettyPrint.Mainland       (char, parensIf, text, (<+>))
 #if defined(CYCLOTOMIC)
-import Text.PrettyPrint.Mainland ( Doc )
+import           Text.PrettyPrint.Mainland       (Doc)
 #endif /* defined(CYCLOTOMIC) */
-import Text.PrettyPrint.Mainland.Class ( Pretty(pprPrec) )
+import           Text.PrettyPrint.Mainland.Class (Pretty (pprPrec))
 #if defined(CYCLOTOMIC)
-import Text.PrettyPrint.Mainland.Class ( Pretty(ppr) )
+import           Text.PrettyPrint.Mainland.Class (Pretty (ppr))
 #endif /* defined(CYCLOTOMIC) */
-import Hasksyma.LaTeX ( PrettyTeX(tppr) )
-import Hasksyma.Pretty ( appPrec, appPrec1, mulPrec, mulPrec1 )
+import           Hasksyma.LaTeX                  (PrettyTeX (tppr))
+import           Hasksyma.Pretty                 (appPrec, appPrec1, mulPrec, mulPrec1)
 #if defined(CYCLOTOMIC)
-import Hasksyma.Pretty ( addPrec )
+import           Hasksyma.Pretty                 (addPrec)
 #endif /* defined(CYCLOTOMIC) */
 
 data Const a where
@@ -179,7 +179,7 @@ instance IsConst Double where
     fromConst (IntegerC x)  = fromInteger x
     fromConst (RationalC x) = fromRational x
 #if defined(CYCLOTOMIC)
-    fromConst (RealCycC x)   = RealCyc.toReal x
+    fromConst (RealCycC x)  = RealCyc.toReal x
 #endif /* defined(CYCLOTOMIC) */
 
 instance IsConst Rational where
@@ -189,7 +189,7 @@ instance IsConst Rational where
     fromConst (IntegerC x)  = fromInteger x
     fromConst (RationalC x) = x
 #if defined(CYCLOTOMIC)
-    fromConst (RealCycC x)   = RealCyc.toReal x
+    fromConst (RealCycC x)  = RealCyc.toReal x
 #endif /* defined(CYCLOTOMIC) */
 
     toConst = RationalC
@@ -201,8 +201,8 @@ instance RealFloat a => IsConst (Complex a) where
     fromConst (IntegerC x)  = fromInteger x
     fromConst (RationalC x) = fromRational x
 #if defined(CYCLOTOMIC)
-    fromConst (RealCycC x)   = RealCyc.toReal x
-    fromConst (CycC x)       = fromCyclotomic x
+    fromConst (RealCycC x)  = RealCyc.toReal x
+    fromConst (CycC x)      = fromCyclotomic x
 #endif /* defined(CYCLOTOMIC) */
 
 -- | Lift a unary operation on @'Num'@ type class to the type @'Const' a@

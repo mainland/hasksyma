@@ -9,19 +9,19 @@
 
 module Test.Simplify where
 
-import Control.Applicative ( (<|>), empty )
-import Test.HUnit
-import Test.Hspec
-import Test.QuickCheck
-import Text.PrettyPrint.Mainland ( (<+>), prettyCompact, text )
-import Text.PrettyPrint.Mainland.Class ( ppr )
+import           Control.Applicative             (empty, (<|>))
+import           Test.Hspec
+import           Test.HUnit
+import           Test.QuickCheck
+import           Text.PrettyPrint.Mainland       (prettyCompact, text, (<+>))
+import           Text.PrettyPrint.Mainland.Class (ppr)
 
-import Hasksyma.Const
-import Hasksyma.Exp
-import Hasksyma.Eval
-import Hasksyma.Simplify
+import           Hasksyma.Const
+import           Hasksyma.Eval
+import           Hasksyma.Exp
+import           Hasksyma.Simplify
 
-import Test.Eval
+import           Test.Eval
 
 simplifyTests :: Spec
 simplifyTests = describe "Simplification" $ do
@@ -29,7 +29,7 @@ simplifyTests = describe "Simplification" $ do
     prodTests
     powTests
     it "Simplification preserves exactness and evaluation" $
-        property $ forAllShrinkBlind arbitrary shrink $ pop_eval_simplify_equiv eps tensec
+        property $ forAllShrinkBlind arbitrary shrink $ popEvalSimplifyEquiv eps tensec
   where
     eps :: Double
     eps = 1e-12
@@ -99,7 +99,7 @@ powTests =
         it "log x - log y = log (x/y)" $
           simplify (log x - log y :: Exp Double) @?= log (x/y)
         it "(sin x) ** 2 + (cos x) ** 2 = 1" $
-          simplify ((sin x) ** 2 + (cos x) ** 2 :: Exp Double) @?= 1
+          simplify (sin x ** 2 + cos x ** 2 :: Exp Double) @?= 1
   where
     e, x, y, z :: Floating a => Exp a
     e = ConstE E
@@ -107,8 +107,8 @@ powTests =
     y = VarE "y"
     z = VarE "z"
 
-pop_eval_simplify_equiv :: Double -> Int -> DExp -> Property
-pop_eval_simplify_equiv eps ms (DExp e) =
+popEvalSimplifyEquiv :: Double -> Int -> DExp -> Property
+popEvalSimplifyEquiv eps ms (DExp e) =
     counterexample (prettyCompact $ text "Expression:" <+> ppr e) $
     counterexample ("Expression: " ++ show e) $
     within ms $

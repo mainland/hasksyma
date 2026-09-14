@@ -9,13 +9,13 @@
 
 module Test.Diff where
 
-import Control.Applicative ( (<|>), empty )
-import Test.HUnit ( (@?=) )
-import Test.Hspec ( describe, it, Spec )
+import           Control.Applicative (empty, (<|>))
+import           Test.Hspec          (Spec, describe, it)
+import           Test.HUnit          ((@?=))
 
-import Hasksyma.Diff ( diff )
-import Hasksyma.Exp ( Exp(FracPowE, IntPowE, VarE) )
-import Hasksyma.Simplify ( simplify )
+import           Hasksyma.Diff       (diff)
+import           Hasksyma.Exp        (Exp (FracPowE, IntPowE, VarE))
+import           Hasksyma.Simplify   (simplify)
 
 diffTests :: Spec
 diffTests = describe "Differentiation" $ do
@@ -23,8 +23,8 @@ diffTests = describe "Differentiation" $ do
         simplify (diff (x + x) x :: Exp Double) @?= 2
     it "diff (a * x ^ 2 + b * x + c) x = 2*a*x + b" $
         simplify (diff (a * x ^ 2 + b * x + c) x :: Exp Double) @?= 2*a*x + b
-    it "log ((diff (x + x) x) / 2) = 0" $
-        simplify (log ((diff (x + x) x) / 2) :: Exp Double) @?= 0
+    it "log (diff (x + x) x / 2) = 0" $
+        simplify (log (diff (x + x) x / 2) :: Exp Double) @?= 0
     it "log (x + x) - log x = log 2" $
         simplify ((log (x + x) - log x) :: Exp Double) @?= log 2
     it "x ** cos pi = 1 / x" $

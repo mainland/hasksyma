@@ -1,8 +1,8 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 -- |
 -- Module      :  Hasksyma.Simplify
@@ -19,27 +19,13 @@ module Hasksyma.Simplify
     simp,
   ) where
 
-import Data.Ratio ( denominator, numerator )
+import           Data.Ratio     (denominator, numerator)
 
-import Hasksyma.Const ( IsConst, Const(..), isExact )
-import Hasksyma.Exp
-    ( Exp(..),
-      FloatBinop(..),
-      FloatUnop(..),
-      FracBinop(..),
-      FracUnop(..),
-      NumBinop(..),
-      NumUnop(..),
-
-      liftNum,
-      liftNum2,
-      liftIntegral2,
-      liftFractional,
-      liftFractional2,
-      liftFloating,
-      liftFloating2,
-      liftIntPow,
-      liftFracPow )
+import           Hasksyma.Const (Const (..), IsConst, isExact)
+import           Hasksyma.Exp   (Exp (..), FloatBinop (..), FloatUnop (..), FracBinop (..),
+                                 FracUnop (..), NumBinop (..), NumUnop (..), liftFloating,
+                                 liftFloating2, liftFracPow, liftFractional, liftFractional2,
+                                 liftIntPow, liftIntegral2, liftNum, liftNum2)
 
 -- | Fully simplify an expression.
 simplify :: (Eq a, Num a, IsConst a) => Exp a -> Exp a
@@ -50,7 +36,7 @@ simplify e | e' == e   = e
 
 -- | Fully simplify an expression.
 simplify' :: (Eq a, Num a, IsConst a) => Exp a -> Exp a
-simplify' e = fixExp simp e
+simplify' = fixExp simp
 
 -- | Perform @n@ simplifcation steps on an expression.
 simplifyn :: (Eq a, Num a, IsConst a) => Int -> Exp a -> Exp a
@@ -206,9 +192,9 @@ joinPowWith :: (Eq a, IsConst a)
             -> Pow a
             -> Pow a
             -> b
-joinPowWith f x@IntPow{}   y@IntPow{}   = f x y
-joinPowWith f x@FracPow{}  y@FracPow{}  = f x y
-joinPowWith f x@FloatPow{} y@FloatPow{} = f x y
+joinPowWith f x@IntPow{}   y@IntPow{}         = f x y
+joinPowWith f x@FracPow{}  y@FracPow{}        = f x y
+joinPowWith f x@FloatPow{} y@FloatPow{}       = f x y
 
 joinPowWith f (IntPow e1 n)   (FracPow e2 m)  = f (FracPow e1 n) (FracPow e2 m)
 joinPowWith f (FracPow e1 n)  (IntPow e2 m)   = f (FracPow e1 n) (FracPow e2 m)

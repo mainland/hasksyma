@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -23,41 +23,31 @@ module Hasksyma.LaTeX
       tinfixop,
     ) where
 
-import Data.Complex (Complex(..))
+import           Data.Complex                    (Complex (..))
 #if defined(CYCLOTOMIC)
-import Data.Complex.Cyclotomic ( Cyclotomic(..) )
+import           Data.Complex.Cyclotomic         (Cyclotomic (..))
 #endif /* defined(CYCLOTOMIC) */
-import Data.List ( intersperse )
+import           Data.List                       (intersperse)
 #if defined(CYCLOTOMIC)
-import qualified Data.Map as Map
-import Data.Number.RealCyclotomic ( RealCyclotomic(..) )
+import qualified Data.Map                        as Map
+import           Data.Number.RealCyclotomic      (RealCyclotomic (..))
 #endif /* defined(CYCLOTOMIC) */
-import Data.Ratio ( Ratio, numerator, denominator )
-import Data.Set ( Set )
-import qualified Data.Set as Set
-import qualified Data.Text as T
-import Text.LaTeX
-    ( IsString(fromString),
-      LaTeX,
-      (!:),
-      (^:),
-      autoBraces,
-      autoParens,
-      autoSquareBrackets,
-      math,
-      showFloat,
-      Render(render) )
+import           Data.Ratio                      (Ratio, denominator, numerator)
+import           Data.Set                        (Set)
+import qualified Data.Set                        as Set
+import qualified Data.Text                       as T
+import           Text.LaTeX                      (IsString (fromString), LaTeX, Render (render),
+                                                  autoBraces, autoParens, autoSquareBrackets, math,
+                                                  showFloat, (!:), (^:))
 #if defined(CYCLOTOMIC)
-import Text.LaTeX
-    ( (!^),
-      zeta )
+import           Text.LaTeX                      (zeta, (!^))
 #endif /* defined(CYCLOTOMIC) */
-import Text.LaTeX.Base.Class ( comm1, LaTeXC )
-import Text.LaTeX.Packages.AMSFonts ( mathfrak )
-import Text.PrettyPrint.Mainland ( strictText )
-import Text.PrettyPrint.Mainland.Class ( Pretty(ppr) )
+import           Text.LaTeX.Base.Class           (LaTeXC, comm1)
+import           Text.LaTeX.Packages.AMSFonts    (mathfrak)
+import           Text.PrettyPrint.Mainland       (strictText)
+import           Text.PrettyPrint.Mainland.Class (Pretty (ppr))
 
-import Hasksyma.Pretty ( Assoc(..), Fixity(..), addPrec )
+import           Hasksyma.Pretty                 (Assoc (..), Fixity (..), addPrec)
 
 class PrettyTeX a where
     {-# MINIMAL tpprPrec | tppr #-}

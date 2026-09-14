@@ -1,7 +1,6 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE RankNTypes        #-}
 
 -- |
 -- Module      :  Test.Const
@@ -11,12 +10,12 @@
 
 module Test.Const where
 
-import Data.Proxy ( Proxy(Proxy) )
-import Test.Hspec ( describe, it, Spec )
-import Test.QuickCheck
+import           Data.Proxy      (Proxy (Proxy))
+import           Test.Hspec      (Spec, describe, it)
+import           Test.QuickCheck
 
-import Hasksyma.Const
-import Test.Arbitrary ()
+import           Hasksyma.Const
+import           Test.Arbitrary  ()
 
 class (Eq a, Show a) => Equiv a where
     equiv :: a -> a -> Property
@@ -71,7 +70,7 @@ instance Show FracBinop where
     show (FracBinop op _ _) = op
 
 instance Arbitrary FracBinop where
-    arbitrary = elements [FracBinop "(/)" (/) (\_ y -> y /= 0)]
+    arbitrary = pure $ FracBinop "(/)" (/) (\_ y -> y /= 0)
 
 prop_frac_equiv :: (IsConst a, Fractional a, Equiv a)
                 => proxy a
@@ -86,7 +85,7 @@ instance Show FloatUnop where
 instance Arbitrary FloatUnop where
     arbitrary = elements [ FloatUnop "exp" exp (const True)
                          , FloatUnop "log" log (const True)
-                         , FloatUnop "sqrt" sqrt (\x -> x >= 0)
+                         , FloatUnop "sqrt" sqrt (>= 0)
                          , FloatUnop "sin" sin (const True)
                          , FloatUnop "cos" cos (const True)
                          , FloatUnop "tan" tan (const True)

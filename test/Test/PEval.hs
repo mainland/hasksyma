@@ -1,5 +1,5 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -10,20 +10,20 @@
 
 module Test.PEval where
 
-import Control.Applicative ( (<|>), empty )
-import Data.Proxy ( Proxy(Proxy) )
-import Test.HUnit
-import Test.Hspec
-import Test.QuickCheck
-import Text.PrettyPrint.Mainland ( (<+>), prettyCompact, text )
-import Text.PrettyPrint.Mainland.Class ( ppr )
+import           Control.Applicative             (empty, (<|>))
+import           Data.Proxy                      (Proxy (Proxy))
+import           Test.Hspec
+import           Test.HUnit
+import           Test.QuickCheck
+import           Text.PrettyPrint.Mainland       (prettyCompact, text, (<+>))
+import           Text.PrettyPrint.Mainland.Class (ppr)
 
-import Hasksyma.Const
-import Hasksyma.Exp
-import Hasksyma.Eval
-import Hasksyma.Simplify
+import           Hasksyma.Const
+import           Hasksyma.Eval
+import           Hasksyma.Exp
+import           Hasksyma.Simplify
 
-import Test.Eval
+import           Test.Eval
 
 prop_nonnegative_pow :: (Num a, IsConst a, Eq a, Show a)
                      => proxy a

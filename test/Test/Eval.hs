@@ -1,7 +1,7 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 -- |
 -- Module      :  Test.Eval
@@ -23,32 +23,17 @@ module Test.Eval
   )
   where
 
-import Control.Applicative ( Alternative, (<|>), empty )
-import Control.Monad ( when )
-import Test.Hspec ( describe, it, Spec )
-import Test.QuickCheck
-    ( Arbitrary(..),
-      arbitraryBoundedEnum,
-      discard,
-      frequency,
-      oneof,
-      resize,
-      sized,
-      (===),
-      Gen,
-      Positive(getPositive),
-      Property,
-      Testable(property) )
+import           Control.Applicative (Alternative, empty, (<|>))
+import           Control.Monad       (when)
+import           Test.Hspec          (Spec, describe, it)
+import           Test.QuickCheck     (Arbitrary (..), Gen, Positive (getPositive), Property,
+                                      Testable (property), arbitraryBoundedEnum, discard, frequency,
+                                      oneof, resize, sized, (===))
 
-import Hasksyma.Const ( Const(..), IsConst(fromConst) )
-import Hasksyma.Eval ( eval, evalexact )
-import Hasksyma.Exp
-    ( Exp(..),
-      FloatUnop(..),
-      FloatBinop(..),
-      FracBinop(..),
-      FracUnop(..),
-      NumUnop(..) )
+import           Hasksyma.Const      (Const (..), IsConst (fromConst))
+import           Hasksyma.Eval       (eval, evalexact)
+import           Hasksyma.Exp        (Exp (..), FloatBinop (..), FloatUnop (..), FracBinop (..),
+                                      FracUnop (..), NumUnop (..))
 
 -- | Return 'True' if expression is an integral constant.
 isIntegral :: Exp a -> Bool

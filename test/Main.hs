@@ -8,24 +8,24 @@
 
 module Main where
 
-import Data.Complex
-import Test.HUnit
-import Test.Hspec
-import Test.QuickCheck
+import           Data.Complex
+import           Test.Hspec
+import           Test.HUnit
+import           Test.QuickCheck
 
-import Hasksyma.Const
+import           Hasksyma.Const
 
-import Test.Const
-import Test.Diff
-import Test.Eval
-import Test.Exact
-import Test.Integrate
+import           Test.Const
+import           Test.Diff
+import           Test.Eval
+import           Test.Exact
+import           Test.Integrate
 #if !defined(PEVAL)
-import Test.NoPEval
+import           Test.NoPEval
 #else
-import Test.PEval
+import           Test.PEval
 #endif
-import Test.Simplify
+import           Test.Simplify
 
 main :: IO ()
 main = hspec spec

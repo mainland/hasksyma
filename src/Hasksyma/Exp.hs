@@ -1,11 +1,11 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- |
 -- Module      :  Hasksyma.Exp
@@ -49,36 +49,21 @@ module Hasksyma.Exp (
   liftFracPow
 ) where
 
-import Data.Symbol ( unintern, Symbol )
-import Text.LaTeX
-    ( IsString(..), (!:), (^:), autoBrackets, operatorname, tsqrt )
-import Text.LaTeX.Base.Class ( braces, comm1, commS, LaTeXC )
-import Text.LaTeX.Base.Math ( frac, integral, integralFromTo )
-import Text.PrettyPrint.Mainland ( Doc, (<+>), (<+/>), char, parensIf, text)
-import Text.PrettyPrint.Mainland.Class ( Pretty(pprPrec, ppr) )
+import           Data.Symbol                     (Symbol, unintern)
+import           Text.LaTeX                      (IsString (..), autoBrackets, operatorname, tsqrt,
+                                                  (!:), (^:))
+import           Text.LaTeX.Base.Class           (LaTeXC, braces, comm1, commS)
+import           Text.LaTeX.Base.Math            (frac, integral, integralFromTo)
+import           Text.PrettyPrint.Mainland       (Doc, char, parensIf, text, (<+/>), (<+>))
+import           Text.PrettyPrint.Mainland.Class (Pretty (ppr, pprPrec))
 
-import Hasksyma.Const ( IsConst, Const(..), isExact )
-import Hasksyma.LaTeX
-    ( PrettyTeX(tpprPrec, tppr),
-      autoParensIf,
-      mathrel,
-      tinfixop )
-import Hasksyma.Pretty
-    ( HasFixity(..),
-      Fixity,
-      infixl_,
-      infixr_,
-      infixop,
-      addPrec,
-      addPrec1,
-      negPrec,
-      negPrec1,
-      mulPrec,
-      mulPrec1,
-      powPrec,
-      powPrec1,
-      appPrec,
-      appPrec1 )
+import           Hasksyma.Const                  (Const (..), IsConst, isExact)
+import           Hasksyma.LaTeX                  (PrettyTeX (tppr, tpprPrec), autoParensIf, mathrel,
+                                                  tinfixop)
+import           Hasksyma.Pretty                 (Fixity, HasFixity (..), addPrec, addPrec1,
+                                                  appPrec, appPrec1, infixl_, infixop, infixr_,
+                                                  mulPrec, mulPrec1, negPrec, negPrec1, powPrec,
+                                                  powPrec1)
 
 newtype Var = Var Symbol
   deriving (Eq, Show, IsString)
@@ -514,21 +499,21 @@ instance Pretty FracUnop where
     ppr Recip  = "recip"
 
 instance Pretty FloatUnop where
-    ppr Exp    = "exp"
-    ppr Log    = "log"
-    ppr Sqrt   = "sqrt"
-    ppr Sin    = "sin"
-    ppr Cos    = "cos"
-    ppr Tan    = "tan"
-    ppr Asin   = "asin"
-    ppr Acos   = "acos"
-    ppr Atan   = "atan"
-    ppr Sinh   = "sinh"
-    ppr Cosh   = "cosh"
-    ppr Tanh   = "tanh"
-    ppr Asinh  = "asinh"
-    ppr Acosh  = "acosh"
-    ppr Atanh  = "atanh"
+    ppr Exp   = "exp"
+    ppr Log   = "log"
+    ppr Sqrt  = "sqrt"
+    ppr Sin   = "sin"
+    ppr Cos   = "cos"
+    ppr Tan   = "tan"
+    ppr Asin  = "asin"
+    ppr Acos  = "acos"
+    ppr Atan  = "atan"
+    ppr Sinh  = "sinh"
+    ppr Cosh  = "cosh"
+    ppr Tanh  = "tanh"
+    ppr Asinh = "asinh"
+    ppr Acosh = "acosh"
+    ppr Atanh = "atanh"
 
 instance Pretty NumBinop where
     ppr Add = "+"
@@ -631,21 +616,21 @@ instance (PrettyTeX a, Num a, Eq a, IsConst a) => PrettyTeX (Exp a) where
         top op $ tpprPrec appPrec1 e
       where
         top :: LaTeXC l => FloatUnop -> l -> l
-        top Exp    = comm1 "exp"
-        top Log    = comm1 "log"
-        top Sqrt   = error "can't happen"
-        top Sin    = comm1 "sin"
-        top Cos    = comm1 "cos"
-        top Tan    = comm1 "tan"
-        top Asin   = comm1 "arcsin"
-        top Acos   = comm1 "arccos"
-        top Atan   = comm1 "arctan"
-        top Sinh   = comm1 "sinh"
-        top Cosh   = comm1 "cosh"
-        top Tanh   = comm1 "tanh"
-        top Asinh  = comm1 "sinh^{-1}"
-        top Acosh  = comm1 "cosh^{-1}"
-        top Atanh  = comm1 "tanh^{-1}"
+        top Exp   = comm1 "exp"
+        top Log   = comm1 "log"
+        top Sqrt  = error "can't happen"
+        top Sin   = comm1 "sin"
+        top Cos   = comm1 "cos"
+        top Tan   = comm1 "tan"
+        top Asin  = comm1 "arcsin"
+        top Acos  = comm1 "arccos"
+        top Atan  = comm1 "arctan"
+        top Sinh  = comm1 "sinh"
+        top Cosh  = comm1 "cosh"
+        top Tanh  = comm1 "tanh"
+        top Asinh = comm1 "sinh^{-1}"
+        top Acosh = comm1 "cosh^{-1}"
+        top Atanh = comm1 "tanh^{-1}"
 
     tpprPrec p (NumBinopE Mul e1 e2) | not (isConstE e2) =
         autoParensIf (p > mulPrec) $

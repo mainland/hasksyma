@@ -1,8 +1,7 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE ViewPatterns #-}
 
 -- |
 -- Module      :  Hasksyma.Integrate
@@ -12,15 +11,15 @@
 
 module Hasksyma.Integrate where
 
-import Control.Monad
-import Data.List ( partition )
-import Data.Map ( Map )
-import Data.Set ( Set )
-import qualified Data.Set as Set
+import           Control.Monad
+import           Data.List         (partition)
+import           Data.Map          (Map)
+import           Data.Set          (Set)
+import qualified Data.Set          as Set
 
-import Hasksyma.Const
-import Hasksyma.Exp
-import Hasksyma.Simplify
+import           Hasksyma.Const
+import           Hasksyma.Exp
+import           Hasksyma.Simplify
 
 data Factors a = F (Const a) (Map (Exp a) (Const a))
 
@@ -72,7 +71,7 @@ factorize e0 | k0 == 0   = [(0, 1)]
 unfactorize :: forall a . (Eq a, Floating a, Floating (Const a), IsConst a)
             => [(Exp a, Const a)]
             -> Exp a
-unfactorize factors = foldl (*) 1 [e**ConstE n | (e, n) <- factors]
+unfactorize factors = product [e**ConstE n | (e, n) <- factors]
 
 divideFactors :: forall a . (Eq a, Floating a, Floating (Const a), IsConst a)
               => [(Exp a, Const a)]
@@ -142,7 +141,7 @@ derivDivides :: forall a m . (Ord a, Floating a, Floating (Const a), IsConst a, 
 derivDivides u n x fs | freeOf x k =
     if n == -1
     then pure $ k * log u
-    else pure $ k * u ** (ConstE (n+1)) / (ConstE (n+1))
+    else pure $ k * u ** ConstE (n+1) / ConstE (n+1)
   where
     k :: Exp a
     k = unfactorize $ divideFactors fs $ factorize (u**ConstE n * deriv u x)

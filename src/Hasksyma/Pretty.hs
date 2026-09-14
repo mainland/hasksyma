@@ -29,8 +29,8 @@ module Hasksyma.Pretty (
     appPrec1
   ) where
 
-import Text.PrettyPrint.Mainland ( (<+/>), (<+>), parensIf, Doc )
-import Text.PrettyPrint.Mainland.Class ( Pretty(pprPrec, ppr) )
+import           Text.PrettyPrint.Mainland       (Doc, parensIf, (<+/>), (<+>))
+import           Text.PrettyPrint.Mainland.Class (Pretty (ppr, pprPrec))
 
 -- | Operator fixity.
 data Fixity = Fixity Assoc Int
