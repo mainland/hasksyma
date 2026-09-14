@@ -6,6 +6,9 @@
 -- Copyright   :  (c) 2023 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
+--
+-- Evaluation of closed subexpressions, with optional preservation of exact
+-- symbolic constants.
 
 module Hasksyma.Eval
   ( eval,

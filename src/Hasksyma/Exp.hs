@@ -13,6 +13,8 @@
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 --
+-- The typed expression tree and the numeric instances used to construct it.
+--
 -- Notebook display instances are provided separately by "Hasksyma.IHaskell"
 -- in the public @hasksyma:ihaskell@ sublibrary. Import that module to enable them.
 
@@ -65,6 +67,10 @@ import           Hasksyma.Pretty                 (Fixity, HasFixity (..), addPre
                                                   mulPrec, mulPrec1, negPrec, negPrec1, powPrec,
                                                   powPrec1)
 
+-- | The name of a symbolic variable.
+--
+-- With @OverloadedStrings@, string literals can be used wherever a t'Var' is
+-- expected.
 newtype Var = Var Symbol
   deriving (Eq, Show, IsString)
 
@@ -122,22 +128,46 @@ data FloatBinop = Pow
                 | LogBase
   deriving (Eq, Ord, Show, Enum, Bounded)
 
+-- | A typed symbolic expression.
+--
+-- The parameter @a@ is the type used when constants are evaluated. Numeric
+-- instances let ordinary Haskell operators construct expression trees.
 data Exp a where
+    -- | An undefined value.
     Undefined   :: Exp a
+    -- | Positive infinity.
     Infty       :: Exp a
+    -- | Negative infinity.
     NegInfty    :: Exp a
+    -- | A constant value.
     ConstE      :: Const a -> Exp a
+    -- | A symbolic variable.
     VarE        :: Var -> Exp a
+    -- | A unary operation from 'Num'.
     NumUnopE    :: Num a => NumUnop -> Exp a -> Exp a
+    -- | A unary operation from 'Fractional'.
     FracUnopE   :: Fractional a => FracUnop -> Exp a -> Exp a
+    -- | A unary operation from 'Floating'.
     FloatUnopE  :: (Floating a, Floating (Const a)) => FloatUnop -> Exp a -> Exp a
+    -- | A binary operation from 'Num'.
     NumBinopE   :: Num a => NumBinop -> Exp a -> Exp a -> Exp a
+    -- | Exponentiation by a nonnegative integral exponent using '(^)'.
+    -- The 'Integer' field does not enforce nonnegativity.
     IntPowE     :: Num a => Exp a -> Integer -> Exp a
+    -- | Exponentiation by a signed integral exponent using @(^^)@.
     FracPowE    :: Fractional a => Exp a -> Integer -> Exp a
+    -- | A binary operation from 'Integral'.
     IntBinopE   :: Integral a => IntBinop -> Exp a -> Exp a -> Exp a
+    -- | Division from 'Fractional'.
     FracBinopE  :: Fractional a => FracBinop -> Exp a -> Exp a -> Exp a
+    -- | A binary operation from 'Floating'.
     FloatBinopE :: (Floating a, Floating (Const a)) => FloatBinop -> Exp a -> Exp a -> Exp a
+    -- | An unevaluated derivative with respect to a variable.
     DiffE       :: (Floating a, Floating (Const a)) => Exp a -> Var -> Exp a
+    -- | An indefinite or definite integral with respect to a variable.
+    --
+    -- 'Nothing' represents an indefinite integral. @'Just' (lower, upper)@
+    -- represents a definite integral.
     IntE        :: (Floating a, Floating (Const a)) => Maybe (Exp a, Exp a) -> Exp a -> Var -> Exp a
 
 -- | Return 'True' if expression is a constant
@@ -216,7 +246,7 @@ floatbinop Pow     = (**)
 floatbinop Root    = \t u -> t ** recip u
 floatbinop LogBase = logBase
 
--- | Lift a 'NumUnop' operator to an @'Exp' a@, reducing constants when possible
+-- | Lift a 'NumUnop' operator to an @t'Exp' a@, reducing constants when possible
 -- while preserving exactness.
 liftNum :: (IsConst a, Num a)
         => NumUnop
@@ -228,7 +258,7 @@ liftNum op (ConstE x) | isExact y = ConstE y
 
 liftNum op e = NumUnopE op e
 
--- | Lift a 'NumBinop' operator to an @'Exp' a@, reducing constants when possible
+-- | Lift a 'NumBinop' operator to an @t'Exp' a@, reducing constants when possible
 -- while preserving exactness.
 liftNum2 :: (IsConst a, Num a)
          => NumBinop
@@ -241,7 +271,7 @@ liftNum2 op (ConstE x) (ConstE y) | isExact z = ConstE z
 
 liftNum2 op e1 e2 = NumBinopE op e1 e2
 
--- | Lift a 'IntBinop' operator to an @'Exp' a@, reducing constants when
+-- | Lift a 'IntBinop' operator to an @t'Exp' a@, reducing constants when
 -- possible while preserving exactness.
 liftIntegral2 :: (IsConst a, Integral a)
               => IntBinop
@@ -254,7 +284,7 @@ liftIntegral2 op (ConstE x) (ConstE y) | isExact z = ConstE z
 
 liftIntegral2 op e1 e2 = IntBinopE op e1 e2
 
--- | Lift a 'FracUnop' operator to an @'Exp' a@, reducing constants when
+-- | Lift a 'FracUnop' operator to an @t'Exp' a@, reducing constants when
 -- possible while preserving exactness.
 liftFractional :: (IsConst a, Fractional a, Eq a)
                => FracUnop
@@ -269,7 +299,7 @@ liftFractional op (ConstE x) | (not (isRecip op) || x /= 0) && isExact y = Const
 
 liftFractional op e = FracUnopE op e
 
--- | Lift a 'FracBinop' operator to an @'Exp' a@, reducing constants when
+-- | Lift a 'FracBinop' operator to an @t'Exp' a@, reducing constants when
 -- possible while preserving exactness.
 liftFractional2 :: (IsConst a, Eq a, Fractional a)
                 => FracBinop
@@ -285,7 +315,7 @@ liftFractional2 op (ConstE x) (ConstE y) | (not (isFDiv op) || y /= 0) && isExac
 
 liftFractional2 op e1 e2 = FracBinopE op e1 e2
 
--- | Lift a 'FloatUnop' operator to an @'Exp' a@, reducing constants when
+-- | Lift a 'FloatUnop' operator to an @t'Exp' a@, reducing constants when
 -- possible while preserving exactness.
 liftFloating :: (IsConst a, Floating a, Floating (Const a))
              => FloatUnop
@@ -297,7 +327,7 @@ liftFloating op (ConstE x) | isExact y = ConstE y
 
 liftFloating op e = FloatUnopE op e
 
--- | Lift a 'FloatBinop' operator to an @'Exp' a@, reducing constants when
+-- | Lift a 'FloatBinop' operator to an @t'Exp' a@, reducing constants when
 -- possible while preserving exactness.
 liftFloating2 :: (IsConst a, Floating a, Floating (Const a))
               => FloatBinop
@@ -315,7 +345,7 @@ liftFloating2 op (ConstE x) (ConstE y) | isExact z = ConstE z
 
 liftFloating2 op e1 e2 = FloatBinopE op e1 e2
 
--- | Lift operation of raising a number to an integral power to an @'Exp' a@,
+-- | Lift raising a number to a nonnegative integral power to an @t'Exp' a@,
 -- reducing constants when possible while preserving exactness.
 liftIntPow :: (IsConst a, Num a, Eq a)
            => Exp a
@@ -327,8 +357,8 @@ liftIntPow (ConstE x) n | (x /= 0 || n /= 0) && isExact z = ConstE z
 
 liftIntPow e n = IntPowE e n
 
--- | Lift operation of raising a number to a non-negative integral power to an
--- @'Exp' a@, reducing constants when possible while preserving exactness.
+-- | Lift operation of raising a number to an integral power to an
+-- @t'Exp' a@, reducing constants when possible while preserving exactness.
 liftFracPow :: (IsConst a, Fractional a, Eq a)
             => Exp a
             -> Integer

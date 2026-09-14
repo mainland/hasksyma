@@ -13,10 +13,12 @@
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 --
--- Symbolic constants. Notebook display instances are provided separately by
+-- Representations for exact, named, and evaluated constants.
+--
+-- Notebook display instances are provided separately by
 -- "Hasksyma.IHaskell" in the public @hasksyma:ihaskell@ sublibrary.
 -- QuickCheck instances are now test-only. Downstream tests that need
--- 'Const' generators must provide their own instances or explicit generators.
+-- t'Const' generators must provide their own instances or explicit generators.
 
 module Hasksyma.Const (
   Const(..),
@@ -48,31 +50,45 @@ import           Hasksyma.Pretty                 (appPrec, appPrec1, mulPrec, mu
 import           Hasksyma.Pretty                 (addPrec)
 #endif /* defined(CYCLOTOMIC) */
 
--- | Symbolic constants with exact numeric representations.
+-- | A symbolic constant whose evaluated values have type @a@.
+--
+-- Dedicated constructors represent exact integers, rationals, and named
+-- constants without immediately converting them to @a@. The optional
+-- @cyclotomic@ flag adds exact real and complex cyclotomic values.
 --
 -- With @cyclotomic@ enabled, 'abs' and 'signum' on exact cyclotomic constants
 -- preserve exactness when the squared magnitude is rational, including zero
 -- and real square roots of rationals. Other squared magnitudes currently raise
 -- an error in the cyclotomic library. No approximate sign test is used.
 data Const a where
+    -- | An already evaluated value.
     Const     :: a -> Const a
+    -- | A rational multiple of pi.
     Pi        :: Floating a => Rational -> Const a
+    -- | Euler's number.
     E         :: Floating a => Const a
+    -- | An exact integer.
     IntegerC  :: Num a => Integer -> Const a
+    -- | An exact rational number.
     RationalC :: Fractional a => Rational -> Const a
 #if defined(CYCLOTOMIC)
+    -- | An exact real cyclotomic value.
     RealCycC  :: RealFloat a => RealCyclotomic -> Const a
+    -- | An exact complex cyclotomic value.
     CycC      :: RealFloat a => Cyclotomic -> Const (Complex a)
 #endif /* defined(CYCLOTOMIC) */
 
--- | Convert between @a@ and @'Const' a@
+-- | Convert between @a@ and @t'Const' a@.
 class IsConst a where
-    -- | Project a value of type @a@ from a @'Const' a@
+    -- | Project a value of type @a@ from a @t'Const' a@.
+    --
+    -- The default implementation accepts only the v'Const' constructor.
+    -- Instances must handle any other constructors they support.
     fromConst :: Const a -> a
     fromConst (Const x) = x
     fromConst _         = error "can't happen"
 
-    -- | Construct a value of type @'Const' a@ from a value of type @a@
+    -- | Construct a value of type @t'Const' a@ from a value of type @a@.
     toConst :: a -> Const a
     toConst x = Const x
 
@@ -142,7 +158,7 @@ instance (Ord a, IsConst a) => Ord (Const a) where
     compare x             y             = joinWith compare x y
 
 #if defined(CYCLOTOMIC)
--- | Export a 'Cyclotomic' as an inexact complex number. This function avoids
+-- | Export a t'Cyclotomic' as an inexact complex number. This function avoids
 -- some error that `Data.Complex.Cyclotomic.toComplex` introduces.
 fromCyclotomic :: RealFloat a => Cyclotomic -> Complex a
 fromCyclotomic x = re :+ im
@@ -211,7 +227,7 @@ instance RealFloat a => IsConst (Complex a) where
     fromConst (CycC x)      = fromCyclotomic x
 #endif /* defined(CYCLOTOMIC) */
 
--- | Lift a unary operation on @'Num'@ type class to the type @'Const' a@
+-- | Lift a unary operation on @'Num'@ type class to the type @t'Const' a@.
 liftNum :: (IsConst b, Num b)
         => (forall a . Num a => a -> a)
         -> Const b
@@ -225,7 +241,7 @@ liftNum f (CycC x)      = CycC (f x)
 #endif /* defined(CYCLOTOMIC) */
 liftNum f x             = toConst (f (fromConst x))
 
--- | Lift a binary operation on @'Num'@ type class to the type @'Const' a@
+-- | Lift a binary operation on @'Num'@ type class to the type @t'Const' a@.
 liftNum2 :: (IsConst b, Num b)
          => (forall a . Num a => a -> a -> a)
          -> Const b

@@ -3,13 +3,13 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- |
--- Module      :  Spiral.Util.Pretty.LaTeX
+-- Module      :  Hasksyma.LaTeX
 -- Copyright   :  (c) 2017-2023 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 --
--- LaTeX rendering independent of notebook support. The @displayMath@ helper
--- has moved to "Hasksyma.IHaskell" in the public @hasksyma:ihaskell@ sublibrary.
+-- Precedence-aware LaTeX rendering independent of notebook support.
+-- The @displayMath@ helper has moved to "Hasksyma.IHaskell" in the public @hasksyma:ihaskell@ sublibrary.
 
 module Hasksyma.LaTeX
     ( PrettyTeX(..),
@@ -49,12 +49,20 @@ import           Text.PrettyPrint.Mainland.Class (Pretty (ppr))
 
 import           Hasksyma.Pretty                 (Assoc (..), Fixity (..), addPrec)
 
+-- | Types that can be rendered as LaTeX fragments.
+--
+-- Define either 'tppr' or 'tpprPrec'. The list methods may be overridden when
+-- a type needs syntax other than a comma-separated, bracketed sequence.
 class PrettyTeX a where
     {-# MINIMAL tpprPrec | tppr #-}
+    -- | Render a value without surrounding precedence constraints.
     tppr     :: a -> LaTeX
+    -- | Render a value in a context with the given precedence.
     tpprPrec :: Int -> a -> LaTeX
 
+    -- | Render a list of values.
     tpprList     :: [a] -> LaTeX
+    -- | Render a list in a context with the given precedence.
     tpprPrecList :: Int -> [a] -> LaTeX
 
     tppr       = tpprPrec 0
@@ -63,6 +71,7 @@ class PrettyTeX a where
     tpprPrecList _ = tpprList
     tpprList       = autoSquareBrackets . commasep . map tppr
 
+-- | Add automatically sized parentheses when the condition is true.
 autoParensIf :: Bool -> LaTeX -> LaTeX
 autoParensIf False l = l
 autoParensIf True l  = autoParens l
@@ -73,15 +82,20 @@ hsep sep = mconcat . intersperse sep
 commasep :: [LaTeX] -> LaTeX
 commasep = hsep ","
 
+-- | Apply LaTeX's @\\mskip@ command to a mathematical length.
 mskip :: LaTeX -> LaTeX
 mskip = comm1 "mskip"
 
+-- | Give a fragment binary-operator spacing with @\\mathbin@.
 mathbin :: LaTeXC l => l -> l
 mathbin = comm1 "mathbin"
 
+-- | Give a fragment relation spacing with @\\mathrel@.
 mathrel :: LaTeXC l => l -> l
 mathrel = comm1 "mathrel"
 
+-- | Render a compact diagonal fraction with a raised numerator and lowered
+-- denominator.
 nicefrac :: LaTeX -> LaTeX -> LaTeX
 nicefrac e1 e2 = mempty ^: e1 <> (mskip "-2mu" <> "/" <> mskip "-1mu") !: e2
 

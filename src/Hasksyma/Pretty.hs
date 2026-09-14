@@ -3,6 +3,8 @@
 -- Copyright   :  (c) 2016-2023 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
+--
+-- Fixity and precedence helpers for rendering symbolic expressions.
 
 module Hasksyma.Pretty (
     Fixity(..),

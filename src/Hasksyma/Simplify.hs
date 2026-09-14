@@ -9,6 +9,8 @@
 -- Copyright   :  (c) 2023 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
+--
+-- Recursive simplification and single-step rewrite rules for expressions.
 
 module Hasksyma.Simplify
   ( simplify,
