@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
@@ -24,8 +25,9 @@ module Test.Eval
   where
 
 import           Control.Applicative (Alternative, empty, (<|>))
-import           Control.Monad       (when)
+import           Control.Monad       (forM_, when)
 import           Test.Hspec          (Spec, describe, it)
+import           Test.HUnit          ((@?=))
 import           Test.QuickCheck     (Arbitrary (..), Gen, Positive (getPositive), Property,
                                       Testable (property), arbitraryBoundedEnum, discard, frequency,
                                       oneof, resize, sized, (===))
@@ -35,90 +37,47 @@ import           Hasksyma.Eval       (eval, evalexact)
 import           Hasksyma.Exp        (Exp (..), FloatBinop (..), FloatUnop (..), FracBinop (..),
                                       FracUnop (..), NumUnop (..))
 
--- | Return 'True' if expression is an integral constant.
-isIntegral :: Exp a -> Bool
-isIntegral (ConstE IntegerC{}) = True
-isIntegral _                   = False
-
--- | Return 'True' if expression is well-defined.
-wellDefined :: (Ord a, IsConst a, Fractional a) => Exp a -> Bool
-wellDefined = wd
+-- | Select finite, well-scaled closed expressions for numerical properties.
+-- The ranges deliberately sample less than the full mathematical domains.
+-- Compare numerical values, since expression ordering only orders syntax.
+wellDefined :: Exp Double -> Bool
+wellDefined e = wd e && check e wellScaled
   where
-    wd (NumUnopE Signum e) | eval e < 0.1 = False
+    wd (NumUnopE Signum x)       = check x (>= 0.1)
+    wd (IntPowE _ n)             = n > 0 && n <= 10
+    wd (FracPowE x n)            = check x $ \a -> abs n <= 10 && (a /= 0 || n > 0)
+    wd (FracUnopE Recip x)       = check x (/= 0)
+    wd (FloatUnopE Log x)        = check x (>= 0.1)
+    wd (FloatUnopE Exp x)        = check x (>= 0.1)
+    wd (FloatUnopE Sqrt x)       = check x (>= 0)
+    wd (FloatUnopE Sin x)        = check x $ \a -> a >= -pi && a <= pi
+    wd (FloatUnopE Cos x)        = check x $ \a -> a >= -pi && a <= pi
+    wd (FloatUnopE Tan x)        = check x $ \a -> a > -pi/2 && a < pi/2
+    wd (FloatUnopE Asin x)       = check x $ \a -> a >= -1 && a <= 1
+    wd (FloatUnopE Acos x)       = check x $ \a -> a >= -1 && a <= 1
+    wd (FloatUnopE Sinh x)       = check x $ \a -> a >= -10 && a <= 10
+    wd (FloatUnopE Cosh x)       = check x $ \a -> a >= -10 && a <= 10
+    wd (FloatUnopE Acosh x)      = check x (>= 1)
+    wd (FloatUnopE Atanh x)      = check x $ \a -> a > -1 && a < 1
+    wd (FracBinopE FDiv _ y)     = check y (/= 0)
+    wd (FloatBinopE Pow x y)     = check2 x y $ \a b ->
+                                   a >= 0 && (a /= 0 || b > 0) && abs b <= 10 && isIntegral b
+    wd (FloatBinopE Root x y)    = check2 x y $ \a b -> a >= 0 && b >= 0.1
+    wd (FloatBinopE LogBase x y) = check2 x y $ \a b -> a >= 2 && b > 0
+    wd _                         = True
 
-    wd e@(IntPowE e1 y) | y <= 0 || abs y > 10 = False
-      where
-        x = eval e1
+    check :: Exp Double -> (Double -> Bool) -> Bool
+    check x p = case eval x of
+                  ConstE c -> let a = fromConst c
+                              in not (isNaN a || isInfinite a) && p a
+                  _        -> False
 
-    wd e@(FracPowE e1 y) | (x == 0 && y <= 0) || abs y > 10 = False
-      where
-        x = eval e1
+    check2 x y p = check x $ \a -> check y (p a)
 
-    wd (FracUnopE Recip e) | eval e == 0 = False
+    -- 'check' rejects nonfinite values before this conversion.
+    isIntegral x = snd (properFraction x :: (Integer, Double)) == 0
 
-    wd (FloatUnopE Log e) | eval e < 0.1 = False
-
-    wd (FloatUnopE Exp e) | eval e < 0.1 = False
-
-    wd (FloatUnopE Sqrt e) | eval e < 0 = False
-
-    wd (FloatUnopE Sin e) | x < -pi || x > pi = False
-      where
-        x = eval e
-
-    wd (FloatUnopE Cos e) | x < -pi || x > pi = False
-      where
-        x = eval e
-
-    wd (FloatUnopE Tan e) | x < -pi/2 || x > pi/2 = False
-      where
-        x = eval e
-
-    wd (FloatUnopE Asin e) | x < -1 || x > 1 = False
-      where
-        x = eval e
-
-    wd (FloatUnopE Acos e) | x < -1 || x > 1 = False
-      where
-        x = eval e
-
-    wd (FloatUnopE Sinh e) | x < -10 || x > 10 = False
-      where
-        x = eval e
-
-    wd (FloatUnopE Cosh e) | x < -10 || x > 10 = False
-      where
-        x = eval e
-
-    wd (FloatUnopE Acosh e) | eval e < 1 = False
-
-    wd (FloatUnopE Atanh e) | x < -1 || x > 1 = False
-      where
-        x = eval e
-
-    wd (FracBinopE FDiv _ e2) | eval e2 == 0 = False
-
-    wd e@(FloatBinopE Pow e1 e2) | (x == 0 && y <= 0) || (x < 0 || not (isIntegral y))|| abs y > 10 = False
-      where
-        x = eval e1
-        y = eval e2
-
-    wd (FloatBinopE Root e1 e2) | x < 0 || y <= 0 || abs y < (1/10) = False
-      where
-        x = eval e1
-        y = eval e2
-
-    wd (FloatBinopE LogBase e1 e2) | eval e1 < 2 || eval e2 <= 0 = False
-
-    wd e = not (illSized e)
-
-    -- | Determine if an expression is ill-sized
-    illSized :: (Ord a, Fractional a, IsConst a) => Exp a -> Bool
-    illSized e = case eval e of
-                   ConstE c -> let x = fromConst c
-                               in
-                                  abs x > 1e20 || (x /= 0 && abs x < 1e-2)
-                   _        -> False
+    wellScaled x = abs x <= 1e20 && (x == 0 || abs x >= 1e-2)
 
 -- | Generate an arbitrary exact constant.
 arbitraryConst :: (Floating a, Arbitrary a) => Gen (Const a)
@@ -244,7 +203,7 @@ instance Arbitrary DExp where
 newtype ExactDExp = ExactDExp (Exp Double)
   deriving (Eq, Ord, Show, Num, Fractional, Floating)
 
-wellDefinedExact :: (Ord a, IsConst a, Fractional a) => Exp a -> Bool
+wellDefinedExact :: Exp Double -> Bool
 wellDefinedExact FloatUnopE{}  = False
 wellDefinedExact FloatBinopE{} = False
 wellDefinedExact e             = wellDefined e
@@ -256,6 +215,29 @@ instance Arbitrary ExactDExp where
 
 evalTests :: Spec
 evalTests = describe "Evaluation" $ do
+    describe "Numeric test helpers" $ do
+      forM_ [("sine", FloatUnopE Sin 1),
+             ("cosine", FloatUnopE Cos 1),
+             ("negative pi", ConstE (Pi (-1))),
+             ("integer power", FloatBinopE Pow 2 3),
+             ("evaluated integer exponent", FloatBinopE Pow 2 (ConstE (Const 3))),
+             ("negative exponent", FloatBinopE Pow 4 (-2))] $ \(name, e) ->
+        it ("admits finite " ++ name ++ " values") $
+          wellDefined (e :: Exp Double) @?= True
+      forM_ [("negative square root", FloatUnopE Sqrt (ConstE (Pi (-1)))),
+             ("negative logarithm", FloatUnopE Log (ConstE (Pi (-1)))),
+             ("zero reciprocal", FracUnopE Recip 0),
+             ("positive atanh endpoint", FloatUnopE Atanh 1),
+             ("negative atanh endpoint", FloatUnopE Atanh (-1)),
+             ("overflow", FloatUnopE Exp 1000),
+             ("inexact overflow", ConstE (IntegerC (10^(400 :: Integer)))),
+             ("undefined value", Undefined),
+             ("open expression", VarE "x")] $ \(name, e) ->
+        it ("rejects " ++ name) $
+          wellDefined (e :: Exp Double) @?= False
+      forM_ [("NaN", 0/0), ("positive infinity", 1/0), ("negative infinity", -1/0)] $ \(name, payload) ->
+        it ("rejects a " ++ name ++ " payload") $
+          wellDefined (ConstE (Const payload) :: Exp Double) @?= False
     it "Exact evaluation evaluates all exact expressions" $
       property prop_eval_evalexact_equiv
 

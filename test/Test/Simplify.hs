@@ -10,6 +10,7 @@
 module Test.Simplify where
 
 import           Control.Applicative             (empty, (<|>))
+import           Control.Monad                   (forM_)
 import           Test.Hspec
 import           Test.HUnit
 import           Test.QuickCheck
@@ -25,6 +26,23 @@ import           Test.Eval
 
 simplifyTests :: Spec
 simplifyTests = describe "Simplification" $ do
+    describe "Numeric test helpers" $ do
+      forM_ [("zeros", 0, 0), ("equal values", 2, 2),
+             ("nearby values", 1, 1 + 1e-13)] $ \(name, x, y) ->
+        it ("accepts " ++ name) $
+          equiv eps (ConstE (Const x)) (ConstE (Const y))
+      it "rejects unequal finite values" $
+        expectFailure $ equiv eps 1 2
+      forM_ [("NaN", 0/0), ("positive infinity", 1/0), ("negative infinity", -1/0)] $ \(name, x) ->
+        forM_ [("left", x, 1), ("right", 1, x), ("both", x, x)] $ \(position, a, b) ->
+          it ("rejects " ++ name ++ " in " ++ position ++ " operands") $
+            expectFailure $ equiv eps (ConstE (Const a)) (ConstE (Const b))
+      forM_ [Undefined, Infty, NegInfty, VarE "x"] $ \e ->
+        it ("rejects unevaluated operands: " ++ show e) $
+          expectFailure $ equiv eps e e
+      forM_ [("zero", 0), ("negative", -1), ("NaN", 0/0), ("infinite", 1/0)] $ \(name, tolerance) ->
+        it ("rejects " ++ name ++ " tolerance") $
+          expectFailure $ equiv tolerance 0 0
     norvigTests
     prodTests
     powTests
@@ -123,12 +141,15 @@ popEvalSimplifyEquiv eps ms (DExp e) =
 
 equiv :: Double -> Exp Double -> Exp Double -> Property
 equiv eps (ConstE x) (ConstE y)
-  | d > 0     = property $ n / d < eps
-  | otherwise = property True
+  | any nonfinite [eps, x', y'] || eps <= 0 = property False
+  | d == 0                                  = property True
+  | otherwise                               = property $ n / d < eps
   where
     x' = fromConst x
     y' = fromConst y
     n = abs (x' - y')
     d = max (abs x') (abs y')
 
-equiv _ e1 e2 = e1 === e2
+    nonfinite a = isNaN a || isInfinite a
+
+equiv _   e1         e2         = counterexample ("Expected finite constants: " ++ show (e1, e2)) False
