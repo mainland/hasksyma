@@ -28,7 +28,7 @@ simplifyTests = describe "Simplification" $ do
     norvigTests
     prodTests
     powTests
-    it "Simplification evaluates all constants" $
+    it "Simplification preserves exactness and evaluation" $
         property $ forAllShrinkBlind arbitrary shrink $ pop_eval_simplify_equiv eps tensec
   where
     eps :: Double

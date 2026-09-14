@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE CPP #-}
 
 -- |
 -- Module      :  Main
@@ -20,7 +20,11 @@ import Test.Diff
 import Test.Eval
 import Test.Exact
 import Test.Integrate
+#if !defined(PEVAL)
+import Test.NoPEval
+#else
 import Test.PEval
+#endif
 import Test.Simplify
 
 main :: IO ()
@@ -34,4 +38,8 @@ spec = do
     simplifyTests
     diffTests
     integrateTests
+#if defined(PEVAL)
     powPevalTests
+#else
+    noPevalTests
+#endif

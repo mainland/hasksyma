@@ -40,9 +40,10 @@ integrate e | e' == e   = e
 integrateTests :: Spec
 integrateTests = describe "Integration" $ do
     it "int x^2 dx = x^3/3" $
-        integrate (integral (x^2) x :: Exp Double) @?= x^3/3
+        integrate (integral (x^2) x :: Exp Double) @?= IntPowE x 3/3
     it "int x * sin(x^2) dx = -1/2*cos (x^2)" $
-        integrate (integral (x * sin(x^2)) x :: Exp Double) @?= -1/2*cos (x^2)
+        integrate (integral (x * sin(x^2)) x :: Exp Double) @?=
+          -(ConstE (RationalC (1/2)) * cos (IntPowE x 2))
   where
     a,b,c, x, y, z :: Exp a
     a = VarE "a"

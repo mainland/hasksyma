@@ -105,6 +105,7 @@ test-suite full
     Test.Eval
     Test.Exact
     Test.Integrate
+    Test.NoPEval
     Test.PEval
     Test.Simplify
 
@@ -115,6 +116,9 @@ test-suite full
     mainland-pretty >= 0.7  && < 0.8,
     HUnit           >= 1.6  && < 1.7,
     QuickCheck      >= 2.13 && < 2.18
+
+  if flag(partial-evaluation)
+    cpp-options: -DPEVAL
 
 source-repository head
   type:     git
