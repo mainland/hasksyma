@@ -71,7 +71,7 @@ norvigTests = do
         it "3 * 2 * x = 6 * x" $
           simplify (3 * 2 * x :: Exp Double) @?= 6 * x
         it "2 * x * x * 3 = 6 * x^2" $
-          simplify (2 * x * x * 3 :: Exp Double) @?= 6 * IntPowE x 2
+          simplify (2 * x * x * 3 :: Exp Double) @?= 6 * NatPowE x 2
         it "2 * x * 3 * y * 4 * z * 5 * 6 = 720 * x * y * z" $
           simplify (2 * x * 3 * y * 4 * z * 5 * 6 :: Exp Double) @?= 720 * x * y * z
         it "3 + x + 4 + x = 2*x + 7" $
@@ -111,6 +111,48 @@ powTests =
           simplify ((x ** y) * (x ** z) :: Exp Double) @?= x ** (y + z)
         it "(x ** y) / (x ** z) = x ** (y - z)" $
           simplify ((x ** y) / (x ** z) :: Exp Double) @?= x ** (y - z)
+        it "recip (x ^ 3) = x ^^ (-3)" $
+          simplify (FracUnopE Recip (NatPowE x 3) :: Exp Double) @?= IntPowE x (-3)
+        it "x ^ 2 / x ^ 5 = x ^^ (-3)" $
+          simplify (FracBinopE FDiv (NatPowE x 2) (NatPowE x 5) :: Exp Double) @?= IntPowE x (-3)
+        it "x ^ 5 / x ^ 2 = x ^ 3" $
+          simplify (FracBinopE FDiv (NatPowE x 5) (NatPowE x 2) :: Exp Double) @?= NatPowE x 3
+        it "(x ^^ (-2)) ^ 3 = x ^^ (-6)" $
+          simplify (NatPowE (IntPowE x (-2)) 3 :: Exp Double) @?= IntPowE x (-6)
+        it "(x ^ 3) ^^ (-2) = x ^^ (-6)" $
+          simplify (IntPowE (NatPowE x 3) (-2) :: Exp Double) @?= IntPowE x (-6)
+        it "(x ^^ (-3)) ^^ (-2) = x ^ 6" $
+          simplify (IntPowE (IntPowE x (-3)) (-2) :: Exp Double) @?= NatPowE x 6
+        it "x ^ 2 * x ^^ (-5) = x ^^ (-3)" $
+          simplify (NumBinopE Mul (NatPowE x 2) (IntPowE x (-5)) :: Exp Double) @?= IntPowE x (-3)
+        it "x ^^ (-5) * x ^ 2 = x ^^ (-3)" $
+          simplify (NumBinopE Mul (IntPowE x (-5)) (NatPowE x 2) :: Exp Double) @?= IntPowE x (-3)
+        it "A nonnegative integral rational exponent becomes a natural power" $
+          simplify (FracPowE x 3 :: Exp Double) @?= NatPowE x 3
+        it "A negative integral rational exponent becomes an integer power" $
+          simplify (FracPowE x (-3) :: Exp Double) @?= IntPowE x (-3)
+        it "A rational constant exponent becomes a rational power" $
+          simplify (FloatBinopE Pow x (ConstE (RationalC (1 / 2))) :: Exp Double) @?= FracPowE x (1 / 2)
+        it "Preserves a square followed by a rational square root" $
+          simplify (FracPowE (NatPowE x 2) (1 / 2) :: Exp Double) @?=
+            FracPowE (NatPowE x 2) (1 / 2)
+        it "Preserves a rational square root followed by a square" $
+          simplify (NatPowE (FracPowE x (1 / 2)) 2 :: Exp Double) @?=
+            NatPowE (FracPowE x (1 / 2)) 2
+        it "Does not combine rational powers into an integral power" $
+          simplify (NumBinopE Mul (FracPowE x (1 / 3)) (FracPowE x (2 / 3)) :: Exp Double)
+            `shouldNotBe` x
+        it "Does not divide rational powers into an integral power" $
+          simplify (FracBinopE FDiv (FracPowE x (4 / 3)) (FracPowE x (1 / 3)) :: Exp Double)
+            `shouldNotBe` x
+        it "Combines identical rational powers as a square of the original expression" $
+          simplify (NumBinopE Mul (FracPowE x (1 / 2)) (FracPowE x (1 / 2)) :: Exp Double) @?=
+            NatPowE (FracPowE x (1 / 2)) 2
+        it "Combines powers when their sum remains nonintegral" $
+          simplify (NumBinopE Mul x (FracPowE x (1 / 2)) :: Exp Double) @?= FracPowE x (3 / 2)
+        it "Terminates when ordering rational powers with constant bases" $
+          property $ within 1000000 $
+            eval (simplify (NumBinopE Mul (FracPowE 0 (1/2)) (FloatUnopE Sqrt 1)) :: Exp Double) === 0
         it "log x + log y = log (x*y)" $
           simplify (log x + log y :: Exp Double) @?= log (x*y)
         it "log x - log y = log (x/y)" $

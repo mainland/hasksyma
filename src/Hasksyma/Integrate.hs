@@ -71,11 +71,19 @@ factorize e0 | k0 == 0   = [(0, 1)]
     fac (FracBinopE FDiv e1 e2) n fs =
       fac e2 (-n) (fac e1 n fs)
 
+    fac (NatPowE e m) n fs =
+      fac e (n*fromIntegral m) fs
+
     fac (IntPowE e m) n fs =
       fac e (n*fromInteger m) fs
 
-    fac (FracPowE e m) n fs =
-      fac e (n*fromInteger m) fs
+    -- Keep the base intact: distributing a rational power over products or
+    -- combining nested powers can change the value at negative bases.
+    fac (FracPowE e m) n (k, fs) | n == 1 =
+      (k, addFactor e (fromRational m) fs)
+
+    fac e@FracPowE{} n (k, fs) =
+      (k, addFactor e n fs)
 
     fac (FloatBinopE Pow e (ConstE m)) n fs =
       fac e (n*m) fs
@@ -132,6 +140,7 @@ fvs (NumUnopE _ e)           = fvs e
 fvs (FracUnopE _ e)          = fvs e
 fvs (FloatUnopE _ e)         = fvs e
 fvs (NumBinopE _ e1 e2)      = fvs e1 <> fvs e2
+fvs (NatPowE e _)            = fvs e
 fvs (IntPowE e _)            = fvs e
 fvs (FracPowE e _)           = fvs e
 fvs (IntBinopE _ e1 e2)      = fvs e1 <> fvs e2

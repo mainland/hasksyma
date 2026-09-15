@@ -47,11 +47,14 @@ module Hasksyma.Exp (
   liftFractional2,
   liftFloating,
   liftFloating2,
+  liftNatPow,
   liftIntPow,
   liftFracPow
 ) where
 
+import           Data.Ratio                      (denominator, numerator)
 import           Data.Symbol                     (Symbol, unintern)
+import           Numeric.Natural                 (Natural)
 import           Text.LaTeX                      (IsString (..), autoBrackets, operatorname, tsqrt,
                                                   (!:), (^:))
 import           Text.LaTeX.Base.Class           (LaTeXC, braces, comm1, commS)
@@ -132,6 +135,17 @@ data FloatBinop = Pow
 --
 -- The parameter @a@ is the type used when constants are evaluated. Numeric
 -- instances let ordinary Haskell operators construct expression trees.
+-- Operator constructors carry the numeric constraints needed to interpret
+-- them. 'NatPowE' stores a 'Natural' exponent, while 'IntPowE' supports
+-- negative 'Integer' exponents and requires 'Fractional'. 'FracPowE' stores
+-- an exact 'Rational' exponent and uses 'Floating' exponentiation.
+--
+-- Migration: replace the former nonnegative @IntPowE e n@ with
+-- @NatPowE e (fromInteger n)@ after checking @n >= 0@. Rename the former
+-- signed @FracPowE e n@ to @IntPowE e n@. Apply the same changes to
+-- @liftIntPow@ and @liftFracPow@ calls. The new rational-power constructor
+-- requires 'Floating', so it is not a replacement for signed powers over
+-- 'Rational'. Derived 'Show' and 'Ord' results reflect the new constructors.
 data Exp a where
     -- | An undefined value.
     Undefined   :: Exp a
@@ -151,11 +165,15 @@ data Exp a where
     FloatUnopE  :: (Floating a, Floating (Const a)) => FloatUnop -> Exp a -> Exp a
     -- | A binary operation from 'Num'.
     NumBinopE   :: Num a => NumBinop -> Exp a -> Exp a -> Exp a
-    -- | Exponentiation by a nonnegative integral exponent using '(^)'.
-    -- The 'Integer' field does not enforce nonnegativity.
-    IntPowE     :: Num a => Exp a -> Integer -> Exp a
-    -- | Exponentiation by a signed integral exponent using @(^^)@.
-    FracPowE    :: Fractional a => Exp a -> Integer -> Exp a
+    -- | Exponentiation by a nonnegative exponent in a 'Num' expression.
+    -- Use 'IntPowE' when the exponent may be negative.
+    NatPowE     :: Num a => Exp a -> Natural -> Exp a
+    -- | Exponentiation by a signed integral exponent.
+    IntPowE     :: Fractional a => Exp a -> Integer -> Exp a
+    -- | Exponentiation by an exact rational exponent, interpreted using
+    -- @(**)@. This retains the underlying type's behavior for negative and
+    -- complex bases, rather than selecting a real root for odd denominators.
+    FracPowE    :: (Floating a, Floating (Const a)) => Exp a -> Rational -> Exp a
     -- | A binary operation from 'Integral'.
     IntBinopE   :: Integral a => IntBinop -> Exp a -> Exp a -> Exp a
     -- | Division from 'Fractional'.
@@ -199,6 +217,7 @@ isExactE (NumUnopE _ e)           = isExactE e
 isExactE (FracUnopE _ e)          = isExactE e
 isExactE (FloatUnopE _ e)         = isExactE e
 isExactE (NumBinopE _ e1 e2)      = isExactE e1 && isExactE e2
+isExactE (NatPowE e _)            = isExactE e
 isExactE (IntPowE e _)            = isExactE e
 isExactE (FracPowE e _)           = isExactE e
 isExactE (IntBinopE _ e1 e2)      = isExactE e1 && isExactE e2
@@ -360,25 +379,39 @@ liftFloating2 op e1 e2 = FloatBinopE op e1 e2
 
 -- | Lift raising a number to a nonnegative integral power to an @t'Exp' a@,
 -- reducing constants when possible while preserving exactness.
-liftIntPow :: (IsConst a, Num a, Eq a)
+liftNatPow :: (IsConst a, Num a, Eq a)
            => Exp a
-           -> Integer
+           -> Natural
            -> Exp a
-liftIntPow (ConstE x) n | (x /= 0 || n /= 0) && isExact z = ConstE z
+liftNatPow (ConstE x) n | (x /= 0 || n /= 0) && isExact z = ConstE z
   where
     z = x ^ n
 
-liftIntPow e n = IntPowE e n
+liftNatPow e n = NatPowE e n
 
 -- | Lift operation of raising a number to an integral power to an
 -- @t'Exp' a@, reducing constants when possible while preserving exactness.
-liftFracPow :: (IsConst a, Fractional a, Eq a)
-            => Exp a
-            -> Integer
-            -> Exp a
-liftFracPow (ConstE x) n | (x /= 0 || n > 0) && isExact z = ConstE z
+liftIntPow :: (IsConst a, Fractional a, Eq a)
+           => Exp a
+           -> Integer
+           -> Exp a
+liftIntPow (ConstE x) n | (x /= 0 || n > 0) && isExact z = ConstE z
   where
     z = x ^^ n
+
+liftIntPow e n = IntPowE e n
+
+-- | Lift exponentiation by an exact rational exponent, reducing constants
+-- only when the result retains an exact representation. Integral exponents
+-- are delegated to 'liftIntPow'.
+liftFracPow :: (IsConst a, Floating a, Floating (Const a), Eq a)
+            => Exp a
+            -> Rational
+            -> Exp a
+liftFracPow e n | denominator n == 1 = liftIntPow e (numerator n)
+liftFracPow (ConstE x) n | isExact z = ConstE z
+  where
+    z = x ** fromRational n
 
 liftFracPow e n = FracPowE e n
 
@@ -398,21 +431,21 @@ instance (Num a, IsConst a, Eq (Exp a)) => Num (Exp a) where
       | e2 == 0   = e1
       | otherwise = liftNum2 Sub e1 e2
 
-    IntPowE e n * e'
-      | e' == e  = IntPowE e (n+1)
+    NatPowE e n * e'
+      | e' == e  = NatPowE e (n+1)
 
-    e * IntPowE e' n
-      | e' == e  = IntPowE e (n+1)
+    e * NatPowE e' n
+      | e' == e  = NatPowE e (n+1)
 
-    IntPowE e n * IntPowE e' m
-      | e' == e  = IntPowE e (n+m)
+    NatPowE e n * NatPowE e' m
+      | e' == e  = NatPowE e (n+m)
 
     e1 * e2
       | e1 == 0   = 0
       | e2 == 0   = 0
       | e1 == 1   = e2
       | e2 == 1   = e1
-      | e1 == e2  = IntPowE e1 2
+      | e1 == e2  = NatPowE e1 2
       | otherwise = liftNum2 Mul e1 e2
 #else /* !defined(PEVAL) */
     e1 + e2 = NumBinopE Add e1 e2
@@ -455,8 +488,8 @@ instance (Fractional a, Eq a, IsConst a) => Fractional (Exp a) where
 #if defined(PEVAL)
     (/) = liftFractional2 FDiv
 
-    recip e@VarE{}      = FracPowE e (-1)
-    recip (IntPowE e n) = FracPowE e (-n)
+    recip e@VarE{}      = IntPowE e (-1)
+    recip (NatPowE e n) = IntPowE e (negate (toInteger n))
     recip e             = FracUnopE Recip e
 #else /* !defined(PEVAL) */
     (/) = FracBinopE FDiv
@@ -479,6 +512,8 @@ instance (Floating a, Eq a, IsConst a, Floating (Const a)) => Floating (Exp a) w
     e1 ** e2
         | e2 == 0 && e1 /= 0 = 1
         | e2 == 1            = e1
+        | ConstE (IntegerC n) <- e2 = liftIntPow e1 n
+        | ConstE (RationalC n) <- e2 = liftFracPow e1 n
         | otherwise = FloatBinopE Pow e1 e2
 #else /* !defined(PEVAL) */
     exp = FloatUnopE Exp
@@ -596,10 +631,12 @@ instance (Pretty a, Num a, IsConst a, Eq a) => Pretty (Exp a) where
     pprPrec p (FloatUnopE op e) = unapp p op e
 
     pprPrec p (NumBinopE op e1 e2)  = infixop p op e1 e2
+    pprPrec p (NatPowE e n)         = parensIf (p > powPrec) $
+                                      pprPrec powPrec1 e <+> text "^" <+/> pprPrec powPrec (toInteger n)
     pprPrec p (IntPowE e n)         = parensIf (p > powPrec) $
-                                      pprPrec powPrec1 e <+> text "^" <+/> pprPrec powPrec n
-    pprPrec p (FracPowE e n)        = parensIf (p > powPrec) $
                                       pprPrec powPrec1 e <+> text "^^" <+/> pprPrec powPrec n
+    pprPrec p (FracPowE e n)        = parensIf (p > powPrec) $
+                                      pprPrec powPrec1 e <+> text "**" <+/> pprPrec powPrec n
     pprPrec p (IntBinopE op e1 e2)  = infixop p op e1 e2
     pprPrec p (FracBinopE op e1 e2) = infixop p op e1 e2
 
@@ -686,6 +723,10 @@ instance (PrettyTeX a, Num a, Eq a, IsConst a) => PrettyTeX (Exp a) where
         top Add = "+"
         top Sub = "-"
         top Mul = commS "cdot"
+
+    tpprPrec p (NatPowE e n) =
+        autoParensIf (p > powPrec) $
+        tpprPrec appPrec1 e ^: tpprPrec powPrec (toInteger n)
 
     tpprPrec p (IntPowE e n) =
         autoParensIf (p > powPrec) $

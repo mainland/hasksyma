@@ -51,6 +51,28 @@ let derivative = simplify $ diff polynomial x
 
 Here `derivative` represents \(3x^2 + 2\).
 
+Power constructors distinguish the type of the exponent:
+
+| Constructor | Exponent | Base constraint |
+| --- | --- | --- |
+| `NatPowE` | `Natural` (nonnegative) | `Num a` |
+| `IntPowE` | `Integer` (signed) | `Fractional a` |
+| `FracPowE` | `Rational` (exact) | `Floating a`, `Floating (Const a)` |
+| `FloatBinopE Pow` | `Exp a` (symbolic) | `Floating a`, `Floating (Const a)` |
+
+For example, `NatPowE x 3`, `IntPowE x (-2)`, and `FracPowE x (1/2)`
+represent a cube, an inverse square, and a rational power. Rational powers
+use the underlying type's `(**)` semantics, including its behavior for
+negative and complex bases. The matching `liftNatPow`, `liftIntPow`, and
+`liftFracPow` helpers reduce constants when they can preserve exactness.
+
+When migrating code that constructs expressions directly, replace the old
+`IntPowE e n` with `NatPowE e (fromInteger n)` after checking that `n >= 0`.
+Rename the old signed `FracPowE e n` to `IntPowE e n`. Likewise, rename the
+old `liftIntPow` to `liftNatPow` and the old `liftFracPow` to `liftIntPow`.
+The new `FracPowE` requires floating operations and cannot represent signed
+powers over `Rational`. Derived `Show` and `Ord` results also change.
+
 !!! note
 
     `diff` expects its second argument to be a `VarE` expression and reports an
