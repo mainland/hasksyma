@@ -23,7 +23,8 @@
 module Hasksyma.Const (
   Const(..),
   IsConst(..),
-  isExact
+  isExact,
+  sameConst
 ) where
 
 import           Data.Complex                    (Complex (..))
@@ -131,6 +132,39 @@ class IsConst a where
     -- distinct from exact constant constructors unless this method is supplied.
     exactRational :: a -> Maybe Rational
     exactRational _ = Nothing
+
+    -- | Compare evaluated payloads for rewrite bookkeeping, not algebraic
+    -- equality. The default uses '==' and inherits its limitations. Override
+    -- it for payloads with nonreflexive equality if unbounded rewriting must
+    -- recognize unchanged values.
+    -- Reliable fixed-point and cycle detection require a reflexive, symmetric,
+    -- transitive identity relation that distinguishes payload changes relevant
+    -- to rewriting.
+    --
+    -- Built-in floating instances treat all NaNs as the same payload and
+    -- distinguish signed zeros. Complex instances compare both components
+    -- with that policy. This does not change ordinary 'Eq' or authorize
+    -- algebraic identities involving NaNs. NaN bit patterns are not preserved
+    -- by this identity relation.
+    samePayload :: Eq a => a -> a -> Bool
+    samePayload = (==)
+
+-- | Compare constant constructors and their stored payloads for rewrite
+-- bookkeeping. Unlike 'Eq', this distinguishes integer, rational, and
+-- evaluated representations of the same value. Evaluated values use
+-- 'samePayload', including its documented NaN and signed-zero policy.
+-- This is not a mathematical equality test.
+sameConst :: (Eq a, IsConst a) => Const a -> Const a -> Bool
+sameConst (Const x)     (Const y)     = samePayload x y
+sameConst (IntegerC x)  (IntegerC y)  = x == y
+sameConst (RationalC x) (RationalC y) = x == y
+sameConst (Pi x)        (Pi y)        = x == y
+sameConst E             E             = True
+#if defined(CYCLOTOMIC)
+sameConst (RealCycC x)  (RealCycC y)  = x == y
+sameConst (CycC x)      (CycC y)      = x == y
+#endif
+sameConst _             _             = False
 
 -- | Return 'True' if a constant retains an exact symbolic representation.
 --
@@ -241,9 +275,11 @@ instance IsConst Integer where
 
 instance IsConst Float where
     exactRational = finiteRational
+    samePayload = sameFloatingPayload
 
 instance IsConst Double where
     exactRational = finiteRational
+    samePayload = sameFloatingPayload
 
 instance IsConst Rational where
     toConst = RationalC
@@ -252,10 +288,18 @@ instance IsConst Rational where
 instance RealFloat a => IsConst (Complex a) where
     exactRational (r :+ i) | i == 0 = finiteRational r
                            | otherwise = Nothing
+    samePayload (r :+ i) (r' :+ i') =
+        sameFloatingPayload r r' && sameFloatingPayload i i'
 
 finiteRational :: RealFloat a => a -> Maybe Rational
 finiteRational x | isNaN x || isInfinite x = Nothing
                  | otherwise = Just (toRational x)
+
+sameFloatingPayload :: RealFloat a => a -> a -> Bool
+sameFloatingPayload x y
+    | isNaN x && isNaN y = True
+    | x == 0 && y == 0   = isNegativeZero x == isNegativeZero y
+    | otherwise          = x == y
 
 -- | Lift a unary operation on @'Num'@ type class to the type @t'Const' a@.
 liftNum :: (IsConst b, Num b)

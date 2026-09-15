@@ -31,6 +31,7 @@ module Hasksyma.Exp (
 
   isConstE,
   isExactE,
+  sameExp,
 
   numunop,
   fracunop,
@@ -62,7 +63,7 @@ import           Text.LaTeX.Base.Math            (frac, integral, integralFromTo
 import           Text.PrettyPrint.Mainland       (Doc, char, parensIf, text, (<+/>), (<+>))
 import           Text.PrettyPrint.Mainland.Class (Pretty (ppr, pprPrec))
 
-import           Hasksyma.Const                  (Const (..), IsConst, isExact)
+import           Hasksyma.Const                  (Const (..), IsConst, isExact, sameConst)
 import           Hasksyma.LaTeX                  (PrettyTeX (tppr, tpprPrec), autoParensIf, mathrel,
                                                   tinfixop)
 import           Hasksyma.Pretty                 (Fixity, HasFixity (..), addPrec, addPrec1,
@@ -192,6 +193,37 @@ data Exp a where
     -- 'Nothing' represents an indefinite integral. @'Just' (lower, upper)@
     -- represents a definite integral.
     IntE        :: (Floating a, Floating (Const a)) => Maybe (Exp a, Exp a) -> Exp a -> Var -> Exp a
+
+-- | Compare expression syntax for rewrite bookkeeping. Compare every
+-- constructor, operator, exponent, variable, bound, and child, using
+-- 'sameConst' for constants. Equivalent numeric representations remain
+-- distinct. Built-in floating NaNs can be recognized as unchanged without
+-- changing 'Eq' or allowing algebraic cancellation of NaNs.
+-- Custom payloads inherit the limitations of their 'Hasksyma.Const.samePayload'
+-- implementation. This is not a mathematical equality test.
+sameExp :: (Eq a, IsConst a) => Exp a -> Exp a -> Bool
+sameExp Undefined            Undefined               = True
+sameExp Infty                Infty                   = True
+sameExp NegInfty             NegInfty                = True
+sameExp (ConstE x)           (ConstE y)              = sameConst x y
+sameExp (VarE x)             (VarE y)                = x == y
+sameExp (NumUnopE op x)      (NumUnopE op' y)        = op == op' && sameExp x y
+sameExp (FracUnopE op x)     (FracUnopE op' y)       = op == op' && sameExp x y
+sameExp (FloatUnopE op x)    (FloatUnopE op' y)      = op == op' && sameExp x y
+sameExp (NumBinopE op x y)   (NumBinopE op' x' y')   = op == op' && sameExp x x' && sameExp y y'
+sameExp (NatPowE x n)        (NatPowE y m)           = n == m && sameExp x y
+sameExp (IntPowE x n)        (IntPowE y m)           = n == m && sameExp x y
+sameExp (FracPowE x n)       (FracPowE y m)          = n == m && sameExp x y
+sameExp (IntBinopE op x y)   (IntBinopE op' x' y')   = op == op' && sameExp x x' && sameExp y y'
+sameExp (FracBinopE op x y)  (FracBinopE op' x' y')  = op == op' && sameExp x x' && sameExp y y'
+sameExp (FloatBinopE op x y) (FloatBinopE op' x' y') = op == op' && sameExp x x' && sameExp y y'
+sameExp (DiffE x v)          (DiffE y w)             = v == w && sameExp x y
+sameExp (IntE bounds x v)    (IntE bounds' y w)      = v == w && sameExp x y && sameBounds bounds bounds'
+  where
+    sameBounds Nothing       Nothing         = True
+    sameBounds (Just (l, u)) (Just (l', u')) = sameExp l l' && sameExp u u'
+    sameBounds _             _               = False
+sameExp _                    _                       = False
 
 -- | Return 'True' if an expression is a single constant node.
 --

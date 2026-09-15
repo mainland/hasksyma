@@ -147,6 +147,35 @@ prop_float2_equiv _ (FloatBinop _ f p) x y = p (fromConst x) (fromConst y) ==> f
 
 constTests :: Spec
 constTests = describe "Computations with constants" $ do
+    describe "Rewrite identity" $ do
+      it "recognizes Float and Double NaNs without changing equality" $ do
+        let nan = Const (0/0) :: Const Double
+        sameConst nan nan `shouldBe` True
+        (nan == nan) `shouldBe` False
+        sameConst (Const (0/0) :: Const Float) (Const (0/0)) `shouldBe` True
+      it "distinguishes signed zeros and non-NaN payloads" $ do
+        sameConst (Const (-0.0) :: Const Double) (Const 0) `shouldBe` False
+        sameConst (Const (0/0) :: Const Double) (Const 1) `shouldBe` False
+      it "compares both components of complex NaN payloads" $ do
+        let nan = 0/0 :: Double
+        sameConst (Const (nan :+ 1)) (Const (nan :+ 1)) `shouldBe` True
+        sameConst (Const (nan :+ 1)) (Const (nan :+ 2)) `shouldBe` False
+        sameConst (Const (1 :+ nan)) (Const (2 :+ nan)) `shouldBe` False
+      it "keeps equal numeric representations distinct" $ do
+        sameConst (IntegerC 1 :: Const Double) (RationalC 1) `shouldBe` False
+        sameConst (Const 1 :: Const Double) (IntegerC 1) `shouldBe` False
+        sameConst (Pi 0 :: Const Double) (IntegerC 0) `shouldBe` False
+      it "uses payload equality by default for custom types" $
+        sameConst (Const (WithDefaultConst True)) (Const (WithDefaultConst True)) `shouldBe` True
+#if defined(CYCLOTOMIC)
+      it "compares cyclotomic payloads without merging constant constructors" $ do
+        let r = RealCycC 2 :: Const Double
+            c = CycC 2 :: Const (Complex Double)
+        sameConst r r `shouldBe` True
+        sameConst c c `shouldBe` True
+        sameConst r (RationalC 2) `shouldBe` False
+        sameConst c (RationalC 2) `shouldBe` False
+#endif
     describe "Constant comparison" $ do
       it "keeps symbolic pi distinct from nearby exact rationals" $ do
         let a = RationalC (toRational (pi :: Double)) :: Const Double

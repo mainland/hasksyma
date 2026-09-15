@@ -42,6 +42,7 @@ simplifyTests = describe "Simplification" $ do
       forM_ [("zero", 0), ("negative", -1), ("NaN", 0/0), ("infinite", 1/0)] $ \(name, tolerance) ->
         it ("rejects " ++ name ++ " tolerance") $
           expectFailure $ equiv tolerance 0 0
+    identityTests
     norvigTests
     prodTests
     powTests
@@ -53,6 +54,34 @@ simplifyTests = describe "Simplification" $ do
 
     tensec :: Int
     tensec = 10 * 1000000
+
+identityTests :: Spec
+identityTests = describe "Expression identity" $ do
+    it "recognizes unchanged NaN syntax without changing equality" $ do
+      let e = FloatUnopE Sin (ConstE (Const (0/0))) :: Exp Double
+      sameExp e e @?= True
+      (e == e) @?= False
+    it "distinguishes equal constant representations inside expressions" $ do
+      let a = NumUnopE Neg (ConstE (IntegerC 1)) :: Exp Double
+          b = NumUnopE Neg (ConstE (RationalC 1))
+      (a == b) @?= True
+      sameExp a b @?= False
+    it "compares operator and power syntax independently of numeric equality" $ do
+      let x = VarE "x" :: Exp Double
+      sameExp (NumUnopE Neg x) (NumUnopE Abs x) @?= False
+      sameExp (NatPowE x 2) (IntPowE x 2) @?= False
+      sameExp (FracPowE x (1/2)) (FracPowE x (1/3)) @?= False
+    it "checks calculus variables and both integral bounds around NaNs" $ do
+      let nan = ConstE (Const (0/0)) :: Exp Double
+          integral l u = IntE (Just (l, u)) nan
+      sameExp (integral nan 1 "x") (integral nan 1 "x") @?= True
+      sameExp (integral nan 1 "x") (integral nan 2 "x") @?= False
+      sameExp (integral 0 nan "x") (integral 1 nan "x") @?= False
+      sameExp (integral nan 1 "x") (integral nan 1 "y") @?= False
+      sameExp (integral nan 1 "x") (IntE Nothing nan "x") @?= False
+      sameExp (IntE Nothing nan "x") (IntE Nothing nan "x") @?= True
+      sameExp (IntE Nothing nan "x") (IntE Nothing 1 "x") @?= False
+      sameExp (DiffE nan "x") (DiffE nan "y") @?= False
 
 norvigTests :: Spec
 norvigTests = do
