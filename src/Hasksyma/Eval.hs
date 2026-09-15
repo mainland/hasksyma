@@ -25,6 +25,11 @@ import           Hasksyma.Exp   (Exp (..), floatbinop, floatunop, fracbinop, fra
 -- | Fully evaluate all closed subexpressions of an expression. Does not
 -- preserve exactness.
 --
+-- Division by a zero constant, its reciprocal, and its negative integer
+-- powers follow the underlying numeric type. Floating results may contain
+-- infinities or NaNs. Types such as Rational can still raise exceptions.
+-- Use 'evalexact' to leave these known zero-denominator operations unreduced.
+--
 -- >>> import Hasksyma.Const (Const (..))
 -- >>> import Hasksyma.Exp (Exp (..), NumBinop (..))
 -- >>> eval (NumBinopE Add (ConstE (Const 2)) (ConstE (Const 3)) :: Exp Integer) == ConstE (Const 5)

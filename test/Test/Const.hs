@@ -13,15 +13,15 @@
 module Test.Const where
 
 #if defined(CYCLOTOMIC)
-import           Control.Exception (evaluate)
-import           Test.Hspec        (errorCall, shouldThrow)
+import           Test.Hspec        (errorCall)
 #endif
+import           Control.Exception (evaluate)
 import           Control.Monad     (forM_)
 import           Data.Complex      (Complex (..))
 import           Data.List         (permutations)
 import           Data.Proxy        (Proxy (Proxy))
 import qualified Data.Set          as Set
-import           Test.Hspec        (Spec, describe, it, shouldBe)
+import           Test.Hspec        (Spec, anyArithException, describe, it, shouldBe, shouldThrow)
 import           Test.QuickCheck
 
 import           Hasksyma.Const
@@ -147,6 +147,33 @@ prop_float2_equiv _ (FloatBinop _ f p) x y = p (fromConst x) (fromConst y) ==> f
 
 constTests :: Spec
 constTests = describe "Computations with constants" $ do
+    describe "Zero division" $ do
+      describe "Float" $ floatingZeroDivisionTests (Proxy :: Proxy Float)
+      describe "Double" $ floatingZeroDivisionTests (Proxy :: Proxy Double)
+      it "uses complex division semantics for exact zero denominators" $
+        forM_ [IntegerC 0, RationalC 0, Pi 0, Const 0
+#if defined(CYCLOTOMIC)
+              , CycC 0
+#endif
+              ] $ \zero ->
+          forM_ [IntegerC 0, IntegerC 1, Const (1 :+ 2)] $ \numerator -> do
+            let result = numerator / zero :: Const (Complex Double)
+            samePayload (fromConst result) (fromConst numerator / fromConst zero) `shouldBe` True
+            isExact result `shouldBe` False
+      it "uses complex reciprocal semantics for exact zero" $
+        forM_ [IntegerC 0, RationalC 0, Pi 0
+#if defined(CYCLOTOMIC)
+              , CycC 0
+#endif
+              ] $ \zero ->
+          samePayload (fromConst (recip zero :: Const (Complex Double)))
+                      (recip (fromConst zero)) `shouldBe` True
+      it "retains the underlying Rational division-by-zero exception" $ do
+        evaluate (fromConst (IntegerC 1 / IntegerC 0) :: Rational) `shouldThrow` anyArithException
+        evaluate (fromConst (recip (RationalC 0)) :: Rational) `shouldThrow` anyArithException
+      it "keeps nonzero rational division exact" $ do
+        sameConst (IntegerC 3 / RationalC 2 :: Const Double) (RationalC (3/2)) `shouldBe` True
+        sameConst (recip (IntegerC 2) :: Const Double) (RationalC (1/2)) `shouldBe` True
     describe "Rewrite identity" $ do
       it "recognizes Float and Double NaNs without changing equality" $ do
         let nan = Const (0/0) :: Const Double
@@ -315,6 +342,34 @@ constTests = describe "Computations with constants" $ do
         property $ prop_float2_equiv (Proxy :: Proxy Float)
     it "Binary Floating operations over Double correct" $
         property $ prop_float2_equiv (Proxy :: Proxy Double)
+
+floatingZeroDivisionTests :: forall a proxy . (RealFloat a, IsConst a)
+                          => proxy a -> Spec
+floatingZeroDivisionTests _ = do
+    it "uses floating division semantics across zero representations" $
+      forM_ zeros $ \zero ->
+        forM_ [IntegerC 0, IntegerC 1, RationalC (-1/2), Pi (-1), E, Const (-1)] $ \numerator -> do
+          let result = numerator / zero
+          samePayload (fromConst result) (fromConst numerator / fromConst zero) `shouldBe` True
+          isExact result `shouldBe` False
+    it "uses floating reciprocal semantics across zero representations" $
+      forM_ zeros $ \zero -> do
+        let result = recip zero
+        samePayload (fromConst result) (recip (fromConst zero)) `shouldBe` True
+        isExact result `shouldBe` False
+    it "uses floating semantics for negative integer powers of zero" $
+      forM_ zeros $ \zero ->
+        forM_ [-1, -2, -3 :: Integer] $ \n -> do
+          let result = zero ^^ n
+          samePayload (fromConst result) (fromConst zero ^^ n) `shouldBe` True
+          isExact result `shouldBe` False
+  where
+    zeros :: [Const a]
+    zeros = [IntegerC 0, RationalC 0, Pi 0, Const 0, Const (-0.0)
+#if defined(CYCLOTOMIC)
+            , RealCycC 0
+#endif
+            ]
 
 comparisonLaws :: (Ord a, Show a) => a -> a -> a -> Property
 comparisonLaws x y z = conjoin

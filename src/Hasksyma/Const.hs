@@ -80,6 +80,12 @@ import           Hasksyma.Pretty                 (addPrec)
 -- instances are lawful when those payload instances are lawful. In particular,
 -- floating NaNs remain nonreflexive and must not be used as ordered keys.
 -- Signed floating zeros share a key. This is not bitwise IEEE identity.
+--
+-- Division by an exact zero and its reciprocal use the underlying @a@
+-- operation. Floating payloads can therefore produce infinities or NaNs,
+-- while rational payloads still raise their division-by-zero exception.
+-- This also applies to negative integer powers of exact zero. Nonzero
+-- rational division retains its exact representation.
 data Const a where
     -- | An already evaluated value.
     Const     :: a -> Const a
@@ -445,12 +451,27 @@ liftFractional2 f (RealCycC x)  (RealCycC y)  = RealCycC (f x y)
 #endif /* defined(CYCLOTOMIC) */
 liftFractional2 f x             y             = joinWith (liftFractional2 f) x y
 
+-- Exact arithmetic cannot represent division by zero. Recognize it without
+-- requiring Eq for arbitrary payloads or approximating symbolic constants.
+isExactZero :: Const a -> Bool
+isExactZero (IntegerC x)  = x == 0
+isExactZero (RationalC x) = x == 0
+isExactZero (Pi x)        = x == 0
+#if defined(CYCLOTOMIC)
+isExactZero (RealCycC x)  = x == 0
+isExactZero (CycC x)      = x == 0
+#endif
+isExactZero _             = False
+
 instance (IsConst a, Fractional a) => Fractional (Const a) where
+    x / y | isExactZero y = toConst (fromConst x / fromConst y)
+
     Pi x / IntegerC y  = Pi (x / fromInteger y)
     Pi x / RationalC y = Pi (x / y)
     x    / y           = liftFractional2 (/) x y
 
-    recip  = liftFractional recip
+    recip x | isExactZero x = toConst (recip (fromConst x))
+    recip x                 = liftFractional recip x
 
     fromRational x = RationalC x
 

@@ -29,15 +29,15 @@ import           Control.Monad       (forM_)
 import           Data.Complex        (Complex (..))
 import           Data.Ratio          (denominator)
 import           Test.Hspec          (Spec, describe, it)
-import           Test.HUnit          ((@?=))
+import           Test.HUnit          (assertFailure, (@?=))
 import           Test.QuickCheck     (Arbitrary (..), Gen, Positive (..), Property,
                                       Testable (property), arbitraryBoundedEnum, discard, frequency,
                                       oneof, resize, sized, (===), (==>))
 
-import           Hasksyma.Const      (Const (..), IsConst (fromConst))
+import           Hasksyma.Const      (Const (..), IsConst (fromConst, samePayload))
 import           Hasksyma.Eval       (eval, evalexact)
 import           Hasksyma.Exp        (Exp (..), FloatBinop (..), FloatUnop (..), FracBinop (..),
-                                      FracUnop (..), NumUnop (..), isExactE)
+                                      FracUnop (..), NumBinop (..), NumUnop (..), isExactE, sameExp)
 
 -- | Select finite, well-scaled closed expressions for numerical properties.
 -- The ranges deliberately sample less than the full mathematical domains.
@@ -227,6 +227,26 @@ instance Arbitrary ExactDExp where
 
 evalTests :: Spec
 evalTests = describe "Evaluation" $ do
+    describe "Zero division" $ do
+      forM_ [("positive quotient", FracBinopE FDiv 1 0, 1/0),
+             ("negative quotient", FracBinopE FDiv (ConstE (IntegerC (-1))) 0, -1/0),
+             ("zero quotient", FracBinopE FDiv 0 0, 0/0),
+             ("reciprocal", FracUnopE Recip 0, 1/0),
+             ("negative power", IntPowE 0 (-2), 1/0)] $ \(name, e, expected) -> do
+        it ("evaluates a " ++ name ++ " using Double semantics") $
+          case eval e :: Exp Double of
+            ConstE (Const value) -> samePayload value expected @?= True
+            result               -> assertFailure $ show result
+        it ("leaves a " ++ name ++ " unreduced during exact evaluation") $
+          sameExp (evalexact e) e @?= True
+      it "evaluates division by a computed zero denominator" $
+        case eval (FracBinopE FDiv 1 (NumBinopE Sub 2 2) :: Exp Double) of
+          ConstE (Const value) -> value @?= 1/0
+          result               -> assertFailure $ show result
+      it "evaluates an overloaded division expression" $
+        case eval (1/0 :: Exp Double) of
+          ConstE (Const value) -> value @?= 1/0
+          result               -> assertFailure $ show result
     describe "Numeric test helpers" $ do
       forM_ [("sine", FloatUnopE Sin 1),
              ("cosine", FloatUnopE Cos 1),
