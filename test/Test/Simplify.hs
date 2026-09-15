@@ -47,6 +47,7 @@ simplifyTests = describe "Simplification" $ do
           expectFailure $ equiv tolerance 0 0
     identityTests
     terminationTests
+    mapExpTests
     fixExpTests
     norvigTests
     prodTests
@@ -87,6 +88,52 @@ identityTests = describe "Expression identity" $ do
       sameExp (IntE Nothing nan "x") (IntE Nothing nan "x") @?= True
       sameExp (IntE Nothing nan "x") (IntE Nothing 1 "x") @?= False
       sameExp (DiffE nan "x") (DiffE nan "y") @?= False
+
+mapExpTests :: Spec
+mapExpTests = describe "Expression traversal" $ do
+    forM_ [("undefined", Undefined), ("positive infinity", Infty),
+           ("negative infinity", NegInfty), ("constant", ConstE (IntegerC 1)),
+           ("variable", VarE "x")] $ \(name, leaf) ->
+      it ("applies the callback to a " ++ name ++ " leaf") $
+        sameExp (mapExp (const done) leaf) done @?= True
+    forM_ contexts $ \(name, wrap) ->
+      it ("transforms leaves inside " ++ name) $
+        sameExp (mapExp rename (wrap (VarE "x"))) (wrap (VarE "y")) @?= True
+    it "transforms leaves inside integral binary operations" $
+      let e = IntBinopE Quot (VarE "x") (VarE "x") :: Exp Integer
+      in sameExp (mapExp rename e) (IntBinopE Quot (VarE "y") (VarE "y")) @?= True
+    it "passes transformed children to the parent callback" $
+      let step VarE{}                                                      = ConstE (IntegerC 1)
+          step (NumBinopE Add (ConstE (IntegerC 1)) (ConstE (IntegerC 1))) = done
+          step e                                                           = e
+      in sameExp (mapExp step (NumBinopE Add (VarE "x") (VarE "x"))) done @?= True
+    it "does not revisit nodes introduced by the callback" $
+      assertTerminates $
+        sameExp (mapExp (NumUnopE Neg) (NumUnopE Abs (VarE "x") :: Exp Double))
+                (NumUnopE Neg (NumUnopE Abs (NumUnopE Neg (VarE "x"))))
+    it "does not force a constant payload that the callback discards" $
+      sameExp (mapExp (const done) (ConstE (Const (error "Unused payload")))) done @?= True
+  where
+    done :: Exp Double
+    done = VarE "done"
+
+    rename :: Exp a -> Exp a
+    rename (VarE "x") = VarE "y"
+    rename e          = e
+
+    contexts :: [(String, Exp Double -> Exp Double)]
+    contexts = [("numeric unary operations", NumUnopE Abs),
+                ("fractional unary operations", FracUnopE Recip),
+                ("floating unary operations", FloatUnopE Sin),
+                ("numeric binary operations", \e -> NumBinopE Add e e),
+                ("natural powers", (`NatPowE` 2)),
+                ("integer powers", (`IntPowE` (-2))),
+                ("fractional powers", (`FracPowE` (1/2))),
+                ("fractional binary operations", \e -> FracBinopE FDiv e e),
+                ("floating binary operations", \e -> FloatBinopE Pow e e),
+                ("derivatives without renaming their variable field", (`DiffE` "x")),
+                ("indefinite integrals without renaming their variable field", \e -> IntE Nothing e "x"),
+                ("definite integral bounds and integrand without renaming the bound variable", \e -> IntE (Just (e, e)) e "x")]
 
 fixExpTests :: Spec
 fixExpTests = describe "Local fixed-point traversal" $ do

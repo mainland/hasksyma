@@ -100,13 +100,20 @@ rewriteWithLimit limit step = go limit []
 simplifyWithLimit :: (Eq a, Num a, IsConst a) => Int -> Exp a -> RewriteResult a
 simplifyWithLimit n = rewriteWithLimit n (mapExp simp)
 
--- | Recursively apply a function to an expression and its sub-expressions.
+-- | Transform an expression bottom-up, including variables, constants, and
+-- exceptional-value leaves. Rebuild each node with recursively transformed
+-- children, then apply the callback. Syntax introduced by the callback is not
+-- traversed again during this pass.
+--
+-- Traverse integral bounds and integrands, but leave the variable fields of
+-- 'DiffE' and 'IntE' unchanged. This is a syntactic transformation, not
+-- capture-avoiding substitution. Callbacks must handle leaf constructors.
 mapExp :: (Eq a, IsConst a) => (Exp a -> Exp a) -> Exp a -> Exp a
-mapExp _ e@Undefined{}            = e
-mapExp _ e@Infty{}                = e
-mapExp _ e@NegInfty{}             = e
-mapExp _ e@ConstE{}               = e
-mapExp _ e@VarE{}                 = e
+mapExp f e@Undefined{}            = f e
+mapExp f e@Infty{}                = f e
+mapExp f e@NegInfty{}             = f e
+mapExp f e@ConstE{}               = f e
+mapExp f e@VarE{}                 = f e
 mapExp f (NumUnopE op x)          = f (NumUnopE op (mapExp f x))
 mapExp f (FracUnopE op x)         = f (FracUnopE op (mapExp f x))
 mapExp f (FloatUnopE op x)        = f (FloatUnopE op (mapExp f x))
