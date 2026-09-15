@@ -146,6 +146,11 @@ data FloatBinop = Pow
 -- @liftIntPow@ and @liftFracPow@ calls. The new rational-power constructor
 -- requires 'Floating', so it is not a replacement for signed powers over
 -- 'Rational'. Derived 'Show' and 'Ord' results reflect the new constructors.
+--
+-- Equality and ordering compare expression structure using the constant
+-- identity and structural ordering described by t'Const'. They do not decide
+-- general mathematical equality or numerical order. Their laws depend on the
+-- supported constant payloads, and floating NaNs remain nonreflexive.
 data Exp a where
     -- | An undefined value.
     Undefined   :: Exp a

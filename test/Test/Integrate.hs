@@ -147,8 +147,20 @@ realPowerForms =
 assertIntegral :: Exp Double -> Exp Double -> Assertion
 assertIntegral integrand expected =
   case heuristicIntegrate integrand "x" of
-    Just actual -> factorize (simplify actual) @?= factorize (simplify expected)
+    Just actual -> do
+      let (a, actualFactors) = coefficient (factorize (simplify actual))
+          (b, expectedFactors) = coefficient (factorize (simplify expected))
+      actualFactors @?= expectedFactors
+      -- The current factorizer may evaluate rational coefficients. Check their
+      -- numerical agreement explicitly, without weakening constant identity.
+      assertBool ("Coefficient " ++ show a ++ ", expected " ++ show b) $
+        not (isNaN a || isInfinite a || isNaN b || isInfinite b)
+        && abs (a - b) <= 1e-12 * max 1 (abs b)
     Nothing     -> assertFailure $ "Failed to integrate " ++ show integrand
+  where
+    coefficient :: [(Exp Double, Const Double)] -> (Double, [(Exp Double, Const Double)])
+    coefficient ((ConstE c, 1) : fs) = (fromConst c, fs)
+    coefficient fs                   = (1, fs)
 
 assertFactorizationValue :: Double -> Exp Double -> Assertion
 assertFactorizationValue expected e =

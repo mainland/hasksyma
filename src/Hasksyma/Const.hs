@@ -60,6 +60,25 @@ import           Hasksyma.Pretty                 (addPrec)
 -- preserve exactness when the squared magnitude is rational, including zero
 -- and real square roots of rationals. Other squared magnitudes currently raise
 -- an error in the cyclotomic library. No approximate sign test is used.
+--
+-- Equality compares exact comparison keys, not rounded interpretations of
+-- symbolic constants. Integers, rationals, zero multiples of pi, and rational
+-- cyclotomic values share rational keys. Evaluated payloads participate through
+-- 'exactRational', without changing whether 'isExact' reports them as exact.
+-- Nonzero multiples of pi and Euler's number retain distinct symbolic keys.
+-- This is a supported identity relation, not a general mathematical equality
+-- decision procedure.
+--
+-- Ordering is structural, not numerical: rational keys precede nonzero pi
+-- multiples, then Euler's number, nonrational cyclotomic keys when enabled,
+-- and opaque payloads. Compare rational values and pi coefficients exactly,
+-- and cyclotomic representations by their order and coefficient maps.
+-- Project with 'fromConst' explicitly when numerical comparison is intended.
+--
+-- Opaque payloads inherit their underlying 'Eq' and 'Ord' behavior. The
+-- instances are lawful when those payload instances are lawful. In particular,
+-- floating NaNs remain nonreflexive and must not be used as ordered keys.
+-- Signed floating zeros share a key. This is not bitwise IEEE identity.
 data Const a where
     -- | An already evaluated value.
     Const     :: a -> Const a
@@ -100,6 +119,19 @@ class IsConst a where
     toConst :: a -> Const a
     toConst x = Const x
 
+    -- | Return the exact rational value of an evaluated payload when supported.
+    -- Used for comparison only, without approximating symbolic constants or
+    -- changing the stored representation. Return 'Nothing' for opaque values.
+    -- A supplied rational must represent the payload exactly.
+    --
+    -- Built-in integral and rational instances provide their exact values.
+    -- Finite floating values provide their exact binary rationals. Infinities,
+    -- NaNs, and complex values with nonzero imaginary parts remain opaque.
+    -- Custom instances default to opaque comparison, so their payloads remain
+    -- distinct from exact constant constructors unless this method is supplied.
+    exactRational :: a -> Maybe Rational
+    exactRational _ = Nothing
+
 -- | Return 'True' if a constant retains an exact symbolic representation.
 --
 -- >>> isExact (IntegerC 3 :: Const Double)
@@ -117,7 +149,8 @@ isExact CycC{}      = True
 #endif /* defined(CYCLOTOMIC) */
 isExact _           = False
 
--- | Convert constants to a "canonical" form suitable for comparison.
+-- Coerce constants to a common representation for arithmetic. The fallback
+-- may approximate symbolic values, so comparison must not use this function.
 joinWith :: IsConst a
          => (Const a -> Const a -> b)
          -> Const a
@@ -150,25 +183,40 @@ joinWith f x             y             = f (Const (fromConst x)) (Const (fromCon
 
 deriving instance Show a => Show (Const a)
 
-instance (Eq a, IsConst a) => Eq (Const a) where
-    Const x     == Const y     = x == y
-    IntegerC x  == IntegerC y  = x == y
-    RationalC x == RationalC y = x == y
+-- Normalize only established exact equivalences. Constructor order gives a
+-- structural order without requiring numerical ordering of named constants.
+data ComparisonKey a
+  = RationalKey Rational
+  | PiKey Rational
+  | EKey
 #if defined(CYCLOTOMIC)
-    CycC x      == CycC y      = x == y
-    RealCycC x  == RealCycC y  = x == y
-#endif /* defined(CYCLOTOMIC) */
-    x           == y           = joinWith (==) x y
+  | CyclotomicKey Integer [(Integer, Rational)]
+#endif
+  | PayloadKey a
+  deriving (Eq, Ord)
+
+comparisonKey :: IsConst a => Const a -> ComparisonKey a
+comparisonKey (Const x)                     = maybe (PayloadKey x) RationalKey (exactRational x)
+comparisonKey (IntegerC x)                  = RationalKey (fromInteger x)
+comparisonKey (RationalC x)                 = RationalKey x
+comparisonKey (Pi 0)                        = RationalKey 0
+comparisonKey (Pi x)                        = PiKey x
+comparisonKey E                             = EKey
+#if defined(CYCLOTOMIC)
+comparisonKey (RealCycC (RealCyclotomic x)) = cyclotomicKey x
+comparisonKey (CycC x)                      = cyclotomicKey x
+
+cyclotomicKey :: Cyclotomic -> ComparisonKey a
+cyclotomicKey x = case Cyc.toRat x of
+    Just q  -> RationalKey q
+    Nothing -> CyclotomicKey (Cyc.order x) (Map.toAscList (Cyc.coeffs x))
+#endif
+
+instance (Eq a, IsConst a) => Eq (Const a) where
+    x == y = comparisonKey x == comparisonKey y
 
 instance (Ord a, IsConst a) => Ord (Const a) where
-    compare (Const x)     (Const y)     = compare x y
-    compare (IntegerC x)  (IntegerC y)  = compare x y
-    compare (RationalC x) (RationalC y) = compare x y
-#if defined(CYCLOTOMIC)
-    compare (RealCycC x)  (RealCycC y)  = compare (RealCyc.toReal x :: Double) (RealCyc.toReal y :: Double)
-    compare CycC{}        CycC{}        = error "incomparable"
-#endif /* defined(CYCLOTOMIC) */
-    compare x             y             = joinWith compare x y
+    compare x y = compare (comparisonKey x) (comparisonKey y)
 
 #if defined(CYCLOTOMIC)
 -- | Export a t'Cyclotomic' as an inexact complex number. This function avoids
@@ -185,18 +233,29 @@ fromRealCyclotomic x = fromJust (Cyc.toReal x :: Maybe a)
 
 instance IsConst Int where
     toConst = IntegerC . fromIntegral
+    exactRational = Just . toRational
 
 instance IsConst Integer where
     toConst = IntegerC
+    exactRational = Just . fromInteger
 
-instance IsConst Float
+instance IsConst Float where
+    exactRational = finiteRational
 
-instance IsConst Double
+instance IsConst Double where
+    exactRational = finiteRational
 
 instance IsConst Rational where
     toConst = RationalC
+    exactRational = Just
 
-instance RealFloat a => IsConst (Complex a)
+instance RealFloat a => IsConst (Complex a) where
+    exactRational (r :+ i) | i == 0 = finiteRational r
+                           | otherwise = Nothing
+
+finiteRational :: RealFloat a => a -> Maybe Rational
+finiteRational x | isNaN x || isInfinite x = Nothing
+                 | otherwise = Just (toRational x)
 
 -- | Lift a unary operation on @'Num'@ type class to the type @t'Const' a@.
 liftNum :: (IsConst b, Num b)
