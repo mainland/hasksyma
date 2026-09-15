@@ -51,6 +51,7 @@ simplifyTests = describe "Simplification" $ do
     integerLogTests
     logDomainTests
     logInverseTests
+    generalPowerDomainTests
     fixExpTests
     norvigTests
     prodTests
@@ -91,6 +92,44 @@ identityTests = describe "Expression identity" $ do
       sameExp (IntE Nothing nan "x") (IntE Nothing nan "x") @?= True
       sameExp (IntE Nothing nan "x") (IntE Nothing 1 "x") @?= False
       sameExp (DiffE nan "x") (DiffE nan "y") @?= False
+
+generalPowerDomainTests :: Spec
+generalPowerDomainTests = describe "General power domains" $ do
+    forM_ [("product", NumBinopE Mul p q),
+           ("quotient", FracBinopE FDiv p q),
+           ("natural outer power", NatPowE p 2),
+           ("negative outer power", IntPowE p (-2))] $ \(name, e) ->
+      it ("preserves an unknown base in a " ++ name) $
+        sameExp (simplify e) e @?= True
+    forM_ [("product", NumBinopE Mul a b),
+           ("identical factors", NumBinopE Mul a a),
+           ("product with a coefficient", NumBinopE Mul (NumBinopE Mul 3 a) b),
+           ("quotient", FracBinopE FDiv a b),
+           ("natural outer power", NatPowE a 2),
+           ("negative outer power", IntPowE a (-2))] $ \(name, e) ->
+      it ("preserves the negative real domain in a " ++ name) $
+        case (eval e, eval (simplify e)) of
+          (ConstE original, ConstE simplified) -> do
+            assertBool "The original power is outside the real domain" (isNaN (fromConst original))
+            assertBool "Simplification must preserve the domain failure" (isNaN (fromConst simplified))
+          result -> assertFailure $ show result
+    it "still combines general powers of an explicit positive exact base" $ do
+      simplify (NumBinopE Mul u v) @?= FloatBinopE Pow 2 (y + z)
+      simplify (FracBinopE FDiv u v) @?= FloatBinopE Pow 2 (y - z)
+    it "still flattens integer powers of a general power with a positive exact base" $ do
+      simplify (NatPowE u 2) @?= FloatBinopE Pow 2 (2*y)
+      simplify (IntPowE u (-2)) @?= FloatBinopE Pow 2 (ConstE (IntegerC (-2))*y)
+  where
+    x, y, z :: Exp Double
+    x = VarE "x"
+    y = VarE "y"
+    z = VarE "z"
+    p = FloatBinopE Pow x y
+    q = FloatBinopE Pow x z
+    u = FloatBinopE Pow 2 y
+    v = FloatBinopE Pow 2 z
+    a = FloatBinopE Pow (ConstE (Const (-1))) (ConstE (Const (1/2))) :: Exp Double
+    b = FloatBinopE Pow (ConstE (Const (-1))) (ConstE (Const (3/2))) :: Exp Double
 
 logInverseTests :: Spec
 logInverseTests = describe "Logarithm inverse conditions" $ do
@@ -412,10 +451,6 @@ prodTests =
 powTests :: SpecWith ()
 powTests =
     describe "exp/log/pow simplification" $ do
-        it "(x ** y) * (x ** z) = x ** (y + z)" $
-          simplify ((x ** y) * (x ** z) :: Exp Double) @?= x ** (y + z)
-        it "(x ** y) / (x ** z) = x ** (y - z)" $
-          simplify ((x ** y) / (x ** z) :: Exp Double) @?= x ** (y - z)
         it "recip (x ^ 3) = x ^^ (-3)" $
           simplify (FracUnopE Recip (NatPowE x 3) :: Exp Double) @?= IntPowE x (-3)
         it "x ^ 2 / x ^ 5 = x ^^ (-3)" $
@@ -461,10 +496,8 @@ powTests =
         it "(sin x) ** 2 + (cos x) ** 2 = 1" $
           simplify (sin x ** 2 + cos x ** 2 :: Exp Double) @?= 1
   where
-    x, y, z :: Floating a => Exp a
+    x :: Floating a => Exp a
     x = VarE "x"
-    y = VarE "y"
-    z = VarE "z"
 
 popEvalSimplifyEquiv :: Double -> Int -> DExp -> Property
 popEvalSimplifyEquiv eps ms (DExp e) =

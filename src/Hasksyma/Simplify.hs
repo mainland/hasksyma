@@ -47,6 +47,10 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 -- intact. Other algebraic rules still have domain restrictions, so this is
 -- not a general guarantee of domain preservation.
 --
+-- Combining general floating powers, or flattening an integer power of one,
+-- requires an explicitly positive exact base. Otherwise, retain the general
+-- power to preserve possible domain failures at negative real bases.
+--
 -- >>> :set -XOverloadedStrings
 -- >>> import Hasksyma.Exp (Exp (..), NumBinop (..))
 -- >>> let x = VarE "x" :: Exp Rational
@@ -222,9 +226,13 @@ joinPowWith f (FloatPow e1 n) (IntPow e2 m)   = f (FloatPow e1 n) (FloatPow e2 (
 joinPowWith f (FracPow e1 q)  (FloatPow e2 m) = f (FloatPow e1 (fromRational q)) (FloatPow e2 m)
 joinPowWith f (FloatPow e1 n) (FracPow e2 q)  = f (FloatPow e1 n) (FloatPow e2 (fromRational q))
 
--- Combining a fractional power into an integral power can change the domain
--- of the expression, for example at negative real bases.
+-- General floating exponents can become integral after combining, erasing a
+-- domain failure at a negative real base. A positive exact base justifies the
+-- exponent law. Fractional powers with unknown bases retain the more limited
+-- check against combining into an integral exponent.
 canCombinePowers :: (Rational -> Rational -> Rational) -> Pow a -> Pow a -> Bool
+canCombinePowers _ (FloatPow x _) _ = isPositiveExactConstant x
+canCombinePowers _ _ (FloatPow x _) = isPositiveExactConstant x
 canCombinePowers f (FracPow _ q) p =
     maybe False (\r -> denominator (f q r) /= 1) (rationalPower p)
 canCombinePowers f p (FracPow _ r) =
@@ -449,6 +457,7 @@ simp (FracBinopE FDiv (pow -> Just p1) (pow -> Just p2))
 -- Keep fractional inner powers intact when an outer integral power could
 -- erase real-domain failures, such as (sqrt (-1))^2 becoming -1.
 -- This restriction is a conservative domain policy.
+-- General floating inner powers likewise require a positive exact base.
 simp (pow -> Just p) = go p
   where
     go :: Pow a -> Exp a
@@ -462,7 +471,9 @@ simp (pow -> Just p) = go p
           NatPow x m   -> NatPowE x (n*m)
           IntPow x m   -> IntPowE x (toInteger n*m)
           FracPow{}    -> liftNatPow e n
-          FloatPow x m -> FloatBinopE Pow x (fromIntegral n*m)
+          FloatPow x m
+            | isPositiveExactConstant x -> FloatBinopE Pow x (fromIntegral n*m)
+            | otherwise                 -> liftNatPow e n
 
     go (NatPow x n) =
         liftNatPow x n
@@ -478,7 +489,9 @@ simp (pow -> Just p) = go p
           NatPow x m   -> IntPowE x (n*toInteger m)
           IntPow x m   -> IntPowE x (n*m)
           FracPow{}    -> liftIntPow e n
-          FloatPow x m -> FloatBinopE Pow x (fromInteger n*m)
+          FloatPow x m
+            | isPositiveExactConstant x -> FloatBinopE Pow x (fromInteger n*m)
+            | otherwise                 -> liftIntPow e n
 
     go (IntPow x n) =
         liftIntPow x n
