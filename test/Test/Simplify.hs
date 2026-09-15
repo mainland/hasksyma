@@ -48,6 +48,7 @@ simplifyTests = describe "Simplification" $ do
     identityTests
     terminationTests
     mapExpTests
+    integerLogTests
     fixExpTests
     norvigTests
     prodTests
@@ -88,6 +89,31 @@ identityTests = describe "Expression identity" $ do
       sameExp (IntE Nothing nan "x") (IntE Nothing nan "x") @?= True
       sameExp (IntE Nothing nan "x") (IntE Nothing 1 "x") @?= False
       sameExp (DiffE nan "x") (DiffE nan "y") @?= False
+
+integerLogTests :: Spec
+integerLogTests = describe "Exact integer logarithm recognition" $ do
+    forM_ [(1, 1), (-2, 4), (0, 0), (2, 0), (2, -1)] $ \(b, y) ->
+      it ("leaves invalid logBase " ++ show b ++ " " ++ show y ++ " unreduced") $
+        let e = logarithm b y
+        in assertTerminates $ sameExp (evalexact e) e
+    it "leaves an infinite logarithm estimate unreduced" $
+      let e = logarithm 2 huge
+      in assertTerminates $ sameExp (evalexact e) e
+    it "leaves a NaN logarithm estimate unreduced" $
+      let e = logarithm huge huge
+      in assertTerminates $ sameExp (evalexact e) e
+    it "still recognizes exact nonnegative integer logarithms" $
+      forM_ [(2, 1, 0), (2, 8, 3), (10, 1000, 3), (3, 3 ^ (30 :: Integer), 30)] $ \(b, y, n) ->
+        sameExp (evalexact (logarithm b y)) (ConstE (IntegerC n)) @?= True
+    it "does not fold a rounded estimate unless exact exponentiation agrees" $
+      forM_ [(2, 3), (3, 10), (2, 2 ^ (53 :: Integer) + 1)] $ \(b, y) ->
+        let e = logarithm b y
+        in sameExp (evalexact e) e @?= True
+  where
+    logarithm :: Integer -> Integer -> Exp Double
+    logarithm b y = FloatBinopE LogBase (ConstE (IntegerC b)) (ConstE (IntegerC y))
+
+    huge = 2 ^ (2048 :: Integer)
 
 mapExpTests :: Spec
 mapExpTests = describe "Expression traversal" $ do

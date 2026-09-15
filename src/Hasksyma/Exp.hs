@@ -398,15 +398,23 @@ liftFloating op e = FloatUnopE op e
 
 -- | Lift a 'FloatBinop' operator to an @t'Exp' a@, reducing constants when
 -- possible while preserving exactness.
+-- Integer logarithm recognition requires a base greater than one, a positive
+-- argument, and a finite floating estimate verified by exact exponentiation.
+-- Unrecognized logarithms remain symbolic, including those with overflowed
+-- estimates.
 liftFloating2 :: (IsConst a, Floating a, Floating (Const a))
               => FloatBinop
               -> Exp a
               -> Exp a
               -> Exp a
-liftFloating2 LogBase (ConstE (IntegerC x)) (ConstE (IntegerC y)) | x ^ z == y = ConstE (IntegerC z)
+liftFloating2 LogBase (ConstE (IntegerC x)) (ConstE (IntegerC y))
+    | x > 1, y > 0, not (isNaN estimate || isInfinite estimate), x ^ z == y = ConstE (IntegerC z)
   where
+    estimate :: Double
+    estimate = logBase (fromIntegral x) (fromIntegral y)
+
     z :: Integer
-    z = round (logBase (fromIntegral x) (fromIntegral y) :: Double)
+    z = round estimate
 
 liftFloating2 op (ConstE x) (ConstE y) | isExact z = ConstE z
   where
