@@ -56,6 +56,10 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 -- This rule does not define extended arithmetic or guard cancellation at
 -- unknown denominators.
 --
+-- Differentiating @log (abs u)@ retains the unresolved derivative of @abs u@.
+-- The shortcut @u'/u@ requires nonzero real arguments and is invalid for general
+-- complex values. This interface does not carry that domain evidence.
+--
 -- >>> :set -XOverloadedStrings
 -- >>> import Hasksyma.Exp (Exp (..), NumBinop (..))
 -- >>> let x = VarE "x" :: Exp Rational
@@ -613,6 +617,9 @@ simp (DiffE (FloatBinopE Pow u v) x) =
 simp (DiffE (FloatUnopE Exp u) x) =
     FloatUnopE Exp u * DiffE u x
 
+-- Do not special-case log(abs u) as u'/u without real, nonzero u.
+-- As a function of complex z, log(abs z) is not holomorphic. Retain
+-- the derivative of abs u until a rule with real-domain evidence applies.
 simp (DiffE (FloatUnopE Log u) x) =
     DiffE u x / u
 

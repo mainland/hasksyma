@@ -186,6 +186,11 @@ intFactors fs x = msum [derivDivides u n x fs | (u, n) <- fs]
 -- multiplier, without distributing its exponent or combining nested powers.
 -- The power rule applies locally where the powers and derivatives are defined
 -- on a consistent branch. This heuristic does not return domain conditions.
+--
+-- For exponent minus one, return @k * log (u^2) / 2@. This equals
+-- @k * log (abs u)@ for nonzero real @u@, without introducing a complex
+-- absolute value. It is a local complex antiderivative where @u^2@ avoids
+-- zero and the chosen logarithm's branch cut.
 derivDivides :: forall a m . (Ord a, Floating a, Floating (Const a), IsConst a, MonadPlus m)
              => Exp a              -- ^ Candidate base @u@
              -> Const a            -- ^ Constant exponent @n@
@@ -198,7 +203,7 @@ derivDivides f n x fs
   , let k = unfactorize $ divideFactors fs ((f, 1) : factorize (deriv u x))
   , freeOf x k =
       if q == -1
-      then pure $ k * log u
+      then pure $ k * log (NatPowE u 2) / 2
       else pure $ k * u ** ConstE (q+1) / ConstE (q+1)
   where
     -- Preserve the original factor for cancellation. Reconstructing it from
@@ -210,7 +215,7 @@ derivDivides f n x fs
 
 derivDivides u n x fs | freeOf x k =
     if n == -1
-    then pure $ k * log u
+    then pure $ k * log (NatPowE u 2) / 2
     else pure $ k * u ** ConstE (n+1) / ConstE (n+1)
   where
     k :: Exp a
@@ -251,6 +256,14 @@ divideFactors ns0 ds0 = [(e, n) | (e, n) <- go ns0 ds0, n /= 0]
 
 -- | Look up a candidate antiderivative for a unary 'Floating' operation.
 -- Operations not represented in the table fail through 'mzero'.
+-- Entries are local antiderivatives on domains where their operations and
+-- derivatives are defined. The table does not return domain conditions.
+--
+-- 'Tan' uses @-log (cos x ^ 2) / 2@. For real arguments this equals
+-- @-log (abs (cos x))@ wherever cosine is nonzero, covering intervals with
+-- either sign of cosine. For complex arguments it is a local antiderivative
+-- where the squared cosine avoids zero and the chosen logarithm's branch cut.
+-- No complex absolute value is introduced, as that would lose analyticity.
 tableIntegrate :: forall a m . (Eq a, Floating a, Floating (Const a), IsConst a, MonadPlus m)
                => FloatUnop         -- ^ Operation to integrate
                -> m (Exp a -> Exp a) -- ^ Candidate as a function of its argument
@@ -258,7 +271,7 @@ tableIntegrate Log  = pure $ \x -> x * log x - x
 tableIntegrate Exp  = pure $ \x -> exp x
 tableIntegrate Sin  = pure $ \x -> -cos x
 tableIntegrate Cos  = pure $ \x -> sin x
-tableIntegrate Tan  = pure $ \x -> -log (cos x)
+tableIntegrate Tan  = pure $ \x -> -log (NatPowE (cos x) 2) / 2
 tableIntegrate Sinh = pure $ \x -> cosh x
 tableIntegrate Cosh = pure $ \x -> sinh x
 tableIntegrate Tanh = pure $ \x -> log (cosh x)

@@ -9,17 +9,28 @@
 
 module Test.Diff where
 
+import           Control.Monad     (forM_)
+import           Data.Complex      (Complex (..))
 import           Test.Hspec        (Spec, describe, it)
 import           Test.HUnit        ((@?=))
 
 import           Hasksyma.Const    (Const (RationalC))
 import           Hasksyma.Diff     (diff)
-import           Hasksyma.Exp      (Exp (ConstE, FracPowE, IntPowE, NatPowE, NumBinopE, VarE),
-                                    NumBinop (Mul))
-import           Hasksyma.Simplify (simp, simplify)
+import           Hasksyma.Exp      (Exp (ConstE, DiffE, FracBinopE, FracPowE, IntPowE, NatPowE, NumBinopE, VarE),
+                                    FracBinop (FDiv), NumBinop (Mul), sameExp)
+import           Hasksyma.Simplify (simp, simplify, simplify')
 
 diffTests :: Spec
 diffTests = describe "Differentiation" $ do
+    describe "Logarithmic absolute values" $ do
+      forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
+        it (name ++ " retains the unresolved complex absolute-value derivative") $
+          let z = VarE "z" :: Exp (Complex Double)
+          in sameExp (transform (diff (log (abs z)) z))
+               (FracBinopE FDiv (DiffE (abs z) "z") (abs z)) @?= True
+      it "also leaves the real absolute-value derivative unresolved without domain evidence" $
+        sameExp (simplify (diff (log (abs x)) x :: Exp Double))
+          (FracBinopE FDiv (DiffE (abs x) "x") (abs x)) @?= True
     it "diff (x ^ 0) x = 0" $
         simp (diff (NatPowE x 0) x :: Exp Double) @?= 0
     it "diff (x ^ 1) x = 1" $

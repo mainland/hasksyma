@@ -16,8 +16,10 @@ import           Test.Hspec         (Spec, describe, it)
 import           Test.HUnit         (Assertion, assertBool, assertFailure, (@?=))
 
 import           Hasksyma.Const
+import           Hasksyma.Diff      (diff)
 import           Hasksyma.Eval      (eval)
-import           Hasksyma.Exp       (Exp (..), FloatBinop (..), FracBinop (..), NumBinop (..))
+import           Hasksyma.Exp       (Exp (..), FloatBinop (..), FloatUnop (Tan), FracBinop (..),
+                                     NumBinop (..))
 import           Hasksyma.Integrate
 import           Hasksyma.Simplify
 
@@ -42,6 +44,8 @@ integrate e0 | e1 == e0  = e0
 integrateTests :: Spec
 integrateTests = do
   integralDependencyTests
+  tangentIntegralTests
+  logarithmicIntegralTests
   describe "Factorization" $ do
     describe "Factor division" $ do
       it "retains denominator factors when the numerator represents one" $
@@ -137,7 +141,7 @@ integrateTests = do
       it "integrates a fractional power below minus one" $
         assertIntegral (power x (-3/2)) ((-2) * power x (-1/2))
       it "uses the logarithmic rule for an intact power of minus one" $
-        assertIntegral (power x (-1)) (log x)
+        assertIntegral (power x (-1)) (log (NatPowE x 2) / 2)
       it "integrates a fractional power of a linear expression" $
         let u = 2*x + 1
         in assertIntegral (power u (1/2)) ((1/3) * power u (3/2))
@@ -156,6 +160,8 @@ integrateTests = do
     it "int x * sin(x^2) dx = -1/2*cos (x^2)" $
         integrate (integral (x * sin(x^(2 :: Integer))) x :: Exp Double) @?=
           -(ConstE (RationalC (1/2)) * cos (NatPowE x 2))
+    it "int 1/x dx = log(x^2)/2" $
+      integrate (integral (1 / x) x :: Exp Double) @?= log (NatPowE x 2) / 2
   where
     half :: Const Double
     half = RationalC (1 / 2)
@@ -165,6 +171,121 @@ integrateTests = do
 
     y :: Exp a
     y = VarE "y"
+
+logarithmicIntegralTests :: Spec
+logarithmicIntegralTests = describe "Logarithmic integration" $ do
+    forM_ integrands $ \(name, integrand) ->
+      it ("integrates " ++ name ++ " on positive and negative real intervals") $
+        case heuristicIntegrate integrand "x" :: Maybe (Exp Double) of
+          Just antideriv -> do
+            let derivative = simplify (diff antideriv x)
+            forM_ [-3, -2, -0.5, 0.5, 2, 3] $ \point -> do
+              let actual = valueAt point antideriv
+                  expected = valueAt point integrand
+                  h = 1e-5
+                  slope = (valueAt (point+h) antideriv - valueAt (point-h) antideriv) / (2*h)
+              assertBool (show actual) (not (isNaN actual || isInfinite actual))
+              assertBool (show derivative) (abs (valueAt point derivative - expected) < 1e-12)
+              assertBool (show slope) (abs (slope - expected) < 1e-8)
+          Nothing -> assertFailure "No logarithmic antiderivative"
+    it "agrees with log(abs x) for nonzero real arguments" $
+      case heuristicIntegrate (1/x) "x" :: Maybe (Exp Double) of
+        Just antideriv -> forM_ [-3, -0.5, 0.5, 3] $ \point ->
+          assertBool (show point) (abs (valueAt point antideriv - log (abs point)) < 1e-12)
+        Nothing -> assertFailure "No logarithmic antiderivative"
+    it "keeps the zero singularity of a reciprocal integral" $
+      case heuristicIntegrate (1/x) "x" :: Maybe (Exp Double) of
+        Just antideriv -> assertBool (show antideriv) (isInfinite (valueAt 0 antideriv))
+        Nothing        -> assertFailure "No logarithmic antiderivative"
+    it "uses a squared-logarithm formula with a local complex derivative" $ do
+      let z = VarE "z" :: Exp (Complex Double)
+          primitive = log (NatPowE z 2) / 2
+          derivative = simplify (diff primitive z)
+      forM_ [1 :+ 0.5, (-1) :+ 0.5, (-1) :+ (-0.5)] $ \point -> do
+        assertBool (show point) (magnitude (valueAt point derivative - recip point) < 1e-12)
+        forM_ [1e-5 :+ 0, 0 :+ 1e-5] $ \h -> do
+          let slope = (valueAt (point+h) primitive - valueAt (point-h) primitive) / (2*h)
+          assertBool (show slope) (magnitude (slope - recip point) < 1e-8)
+  where
+    x :: Exp Double
+    x = VarE "x"
+
+    integrands :: [(String, Exp Double)]
+    integrands =
+      [ ("a quotient", 1/x)
+      , ("a normalized reciprocal", simplify (recip x))
+      , ("a negative integer power", IntPowE x (-1))
+      , ("a linear substitution", 1/(2*x+1/2))
+      , ("a quadratic substitution", x/(NatPowE x 2-1))
+      ] ++ [(name, power x (-1)) | (name, power) <- realPowerForms]
+
+    valueAt :: (Eq a, Num a, IsConst a) => a -> Exp a -> a
+    valueAt point e = case eval (mapExp replace e) of
+                       ConstE c -> fromConst c
+                       _        -> error "Expected a constant after evaluation"
+      where
+        replace VarE{} = ConstE (Const point)
+        replace other  = other
+
+tangentIntegralTests :: Spec
+tangentIntegralTests = describe "Tangent integration" $ do
+    it "returns real values on intervals with either sign of cosine" $
+      withPrimitive $ \primitive ->
+        forM_ realPoints $ \point ->
+          assertClose (-log (abs (cos point))) (valueAt point (primitive x))
+    it "differentiates to tangent on both real domains" $
+      withPrimitive $ \primitive ->
+        forM_ realPoints $ \point ->
+          assertClose (tan point) (valueAt point (simplify (diff (primitive x) x)))
+    it "has the correct numerical slope where real cosine is negative" $
+      withPrimitive $ \primitive ->
+        forM_ [-3, -2, 2, 3] $ \point ->
+          let h = 1e-5
+              slope = (valueAt (point+h) (primitive x) - valueAt (point-h) (primitive x)) / (2*h)
+          in assertBool (show slope) (abs (slope - tan point) < 1e-8)
+    it "supports heuristic integration and linear substitution across real intervals" $
+      forM_ [tan x, tan (2*x+1)] $ \integrand ->
+        case heuristicIntegrate integrand "x" :: Maybe (Exp Double) of
+          Just antideriv -> forM_ realPoints $ \point -> do
+            let value = valueAt point antideriv
+            assertBool (show value) (not (isNaN value || isInfinite value))
+            assertClose (valueAt point integrand) (valueAt point (simplify (diff antideriv x)))
+          Nothing -> assertFailure "No tangent antiderivative"
+    it "retains a local complex antiderivative away from logarithm cuts" $
+      case tableIntegrate Tan :: Maybe (Exp (Complex Double) -> Exp (Complex Double)) of
+        Just primitive -> do
+          let z = VarE "z"
+              derivative = simplify (diff (primitive z) z)
+          forM_ [0.5 :+ 0.25, 2 :+ 0.25, (-2) :+ (-0.5)] $ \point -> do
+            assertBool (show point) (magnitude (valueAt point derivative - tan point) < 1e-12)
+            forM_ [1e-5 :+ 0, 0 :+ 1e-5] $ \h -> do
+              let slope = (valueAt (point+h) (primitive z) - valueAt (point-h) (primitive z)) / (2*h)
+              assertBool (show slope) (magnitude (slope - tan point) < 1e-8)
+        Nothing -> assertFailure "No complex tangent antiderivative"
+  where
+    x :: Exp Double
+    x = VarE "x"
+
+    realPoints :: [Double]
+    realPoints = [-3, -2, -0.5, 0, 0.5, 2, 3, 7]
+
+    withPrimitive :: ((Exp Double -> Exp Double) -> Assertion) -> Assertion
+    withPrimitive action = case tableIntegrate Tan of
+                             Just primitive -> action primitive
+                             Nothing        -> assertFailure "No tangent antiderivative"
+
+    valueAt :: (Eq a, Num a, IsConst a) => a -> Exp a -> a
+    valueAt point e = case eval (mapExp replace e) of
+                       ConstE c -> fromConst c
+                       _        -> error "Expected a constant after evaluation"
+      where
+        replace VarE{} = ConstE (Const point)
+        replace other  = other
+
+    assertClose :: Double -> Double -> Assertion
+    assertClose expected actual =
+      assertBool (show actual ++ ", expected " ++ show expected) $
+        abs (actual - expected) < 1e-12 * max 1 (abs expected)
 
 integralDependencyTests :: Spec
 integralDependencyTests = describe "Integral dependencies" $ do
