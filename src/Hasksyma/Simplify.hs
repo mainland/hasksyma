@@ -60,6 +60,11 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 -- The shortcut @u'/u@ requires nonzero real arguments and is invalid for general
 -- complex values. This interface does not carry that domain evidence.
 --
+-- Negation folds constants only when its result has an exact representation,
+-- as in @evalexact@. In particular, negated Euler's number remains symbolic.
+-- Negated evaluated payloads also remain expression nodes. Use @eval@ to
+-- request numerical reduction.
+--
 -- >>> :set -XOverloadedStrings
 -- >>> import Hasksyma.Exp (Exp (..), NumBinop (..))
 -- >>> let x = VarE "x" :: Exp Rational
@@ -394,9 +399,9 @@ simp (NumBinopE Mul x (FracBinopE FDiv y z)) | z `prodbefore` y =
     x/z * y
 
 -- Simplify negation
-simp (NumUnopE Neg (ConstE k)) =
-    ConstE (-k)
-
+-- Do not fold arbitrary constants here: negating symbolic E would
+-- approximate it. Leave constant negation to the exactness-checked
+-- liftNum fall-through rule.
 simp (NumUnopE Neg (NumUnopE Neg x)) = x
 
 simp (NumBinopE Add x (NumUnopE Neg y)) =

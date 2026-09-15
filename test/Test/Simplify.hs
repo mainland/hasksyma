@@ -54,6 +54,7 @@ simplifyTests = describe "Simplification" $ do
     generalPowerDomainTests
     zeroPowerTests
     zeroDivisionTests
+    exactNegationTests
     fixExpTests
     norvigTests
     prodTests
@@ -66,6 +67,49 @@ simplifyTests = describe "Simplification" $ do
 
     tensec :: Int
     tensec = 10 * 1000000
+
+exactNegationTests :: Spec
+exactNegationTests = describe "Exact negation" $ do
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) -> do
+      forM_ expressions $ \(form, e) ->
+        it (name ++ " preserves exactness in " ++ form) $ do
+          isExactE (transform e) @?= True
+          value (transform e) @?= value e
+      it (name ++ " agrees with exact evaluation of negative Euler's number") $
+        sameExp (transform negativeE) (evalexact negativeE) @?= True
+      it (name ++ " still folds negation of exact numeric constants") $
+        forM_ [IntegerC (10^(100 :: Integer)), RationalC (3/2), Pi 1, Pi (-1)] $ \c -> do
+          let result = transform (NumUnopE Neg (ConstE c) :: Exp Double)
+          isExactE result @?= True
+          result @?= ConstE (-c)
+      it (name ++ " leaves evaluated payloads for numerical evaluation") $
+        forM_ [2, 0/0, 1/0, -1/0] $ \payload -> do
+          let e = NumUnopE Neg (ConstE (Const payload)) :: Exp Double
+          sameExp (transform e) e @?= True
+          samePayload (value (transform e)) (-payload) @?= True
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
+      it (name ++ " preserves negative Euler's number with complex payloads") $
+        let e = NumUnopE Neg (ConstE E) :: Exp (Complex Double)
+        in sameExp (transform e) e @?= True
+  where
+    negativeE :: Exp Double
+    negativeE = NumUnopE Neg (ConstE E)
+
+    expressions :: [(String, Exp Double)]
+    expressions =
+      [ ("negative Euler's number", negativeE)
+      , ("double negation", NumUnopE Neg negativeE)
+      , ("a sum containing negative Euler's number", NumBinopE Add 1 negativeE)
+      , ("a product containing negative Euler's number", NumBinopE Mul (VarE "x") negativeE)
+      ]
+
+    value :: Exp Double -> Double
+    value e = case eval (mapExp replace e) of
+                ConstE c -> fromConst c
+                result   -> error (show result)
+      where
+        replace VarE{} = 2
+        replace other  = other
 
 identityTests :: Spec
 identityTests = describe "Expression identity" $ do
