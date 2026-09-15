@@ -44,6 +44,20 @@ data Factors a = F
 -- | Decompose an expression into bases paired with constant exponents for the
 -- integration heuristics. This uses algebraic product and power rewrites and
 -- does not track their domain or branch conditions.
+--
+-- Decompose products, quotients, and powers with natural or signed integer
+-- exponents. General powers are decomposed only when their exponent is an
+-- 'IntegerC'. Keep 'FracPowE' and other general powers intact as bases with
+-- integer multiplicities, avoiding distribution or merging of fractional
+-- exponents across potentially negative or complex bases.
+--
+-- This changes the factor list for fractional powers: @x ** (1/2)@ is retained
+-- as a whole factor with exponent one, rather than exposing @x@ with exponent
+-- @1/2@. 'derivDivides' recognizes these intact factors for substitution.
+-- Heuristics that require combining distinct fractional powers still need
+-- domain and branch assumptions before that combination is valid.
+-- Integer factor cancellation still uses formal algebra and does not track
+-- excluded points or guarantee preservation of floating-point exceptions.
 factorize :: forall a . (Eq a, Floating a, Floating (Const a), IsConst a)
           => Exp a               -- ^ Expression to factor
           -> [(Exp a, Const a)] -- ^ Bases and their exponents
@@ -55,15 +69,16 @@ factorize e0 | k0 == 0   = [(0, 1)]
     factors :: [(Exp a, Const a)]
     (k0, factors) = fac e0 1 (1, [])
 
-    -- Accumulate a constant coefficient and symbolic factors.
+    -- Only integer exponents may enter recursive decomposition. Fractional
+    -- powers remain whole factors so their domains and branches are retained.
     fac :: Exp a
-        -> Const a
+        -> Integer
         -> (Const a, [(Exp a, Const a)])
         -> (Const a, [(Exp a, Const a)])
-    fac (ConstE k) n (k', fs) = (k' * k**n, fs)
+    fac (ConstE k) n (k', fs) = (k' * k**fromInteger n, fs)
 
     fac (NumUnopE Neg e) n (k, fs) =
-      fac e n (-k, fs)
+      fac e n ((if even n then 1 else -1) * k, fs)
 
     fac (NumBinopE Mul e1 e2) n fs =
       fac e2 n (fac e1 n fs)
@@ -72,23 +87,15 @@ factorize e0 | k0 == 0   = [(0, 1)]
       fac e2 (-n) (fac e1 n fs)
 
     fac (NatPowE e m) n fs =
-      fac e (n*fromIntegral m) fs
+      fac e (n*toInteger m) fs
 
     fac (IntPowE e m) n fs =
-      fac e (n*fromInteger m) fs
-
-    -- Keep the base intact: distributing a rational power over products or
-    -- combining nested powers can change the value at negative bases.
-    fac (FracPowE e m) n (k, fs) | n == 1 =
-      (k, addFactor e (fromRational m) fs)
-
-    fac e@FracPowE{} n (k, fs) =
-      (k, addFactor e n fs)
-
-    fac (FloatBinopE Pow e (ConstE m)) n fs =
       fac e (n*m) fs
 
-    fac e n (k, fs) = (k, addFactor e n fs)
+    fac (FloatBinopE Pow e (ConstE (IntegerC m))) n fs =
+      fac e (n*m) fs
+
+    fac e n (k, fs) = (k, addFactor e (fromInteger n) fs)
 
     -- Add a base, combining exponents when an equal base is present.
     addFactor :: Exp a
@@ -104,28 +111,6 @@ unfactorize :: forall a . (Eq a, Floating a, Floating (Const a), IsConst a)
             => [(Exp a, Const a)]
             -> Exp a
 unfactorize factors = product [e**ConstE n | (e, n) <- factors]
-
--- | Form a heuristic quotient of factor lists by subtracting exponents.
--- Remove factors whose resulting exponent is zero.
-divideFactors :: forall a . (Eq a, Floating a, Floating (Const a), IsConst a)
-              => [(Exp a, Const a)] -- ^ Numerator factors
-              -> [(Exp a, Const a)] -- ^ Denominator factors
-              -> [(Exp a, Const a)] -- ^ Quotient factors
-divideFactors ns0 ds0 = [(e, n) | (e, n) <- go ns0 ds0, n /= 0]
-  where
-    go :: [(Exp a, Const a)]
-       -> [(Exp a, Const a)]
-       -> [(Exp a, Const a)]
-    go [] _      = []
-    go ns  []    = ns
-    go ns (d:ds) = go (div1 ns d) ds
-
-    div1 :: [(Exp a, Const a)]
-         -> (Exp a, Const a)
-         -> [(Exp a, Const a)]
-    div1 []            (e', m)             = [(e', -m)]
-    div1 ((e, n) : fs) (e', m) | e' == e   = (e, n-m) : fs
-                               | otherwise = (e, n) : div1 fs (e', m)
 
 -- | Collect variables occurring in expression operands and integral bounds.
 -- The variable fields of 'DiffE' and 'IntE' do not bind or add variables in
@@ -189,12 +174,34 @@ intFactors fs x = msum [derivDivides u n x fs | (u, n) <- fs]
 -- | Attempt integration by substitution. For a candidate factor @u^n@,
 -- divide the integrand's factors by those of @u^n * du/dx@. A quotient
 -- independent of @x@ supplies the multiplier for the candidate antiderivative.
+--
+-- An intact rational or constant general power with multiplicity one is also
+-- a substitution candidate. Match that original factor when finding the
+-- multiplier, without distributing its exponent or combining nested powers.
+-- The power rule applies locally where the powers and derivatives are defined
+-- on a consistent branch. This heuristic does not return domain conditions.
 derivDivides :: forall a m . (Ord a, Floating a, Floating (Const a), IsConst a, MonadPlus m)
              => Exp a              -- ^ Candidate base @u@
              -> Const a            -- ^ Constant exponent @n@
              -> Var                -- ^ Variable of integration @x@
              -> [(Exp a, Const a)] -- ^ Factors of the integrand
              -> m (Exp a)          -- ^ A candidate when substitution succeeds
+derivDivides f n x fs
+  | n == 1
+  , Just (u, q) <- constantPower f
+  , let k = unfactorize $ divideFactors fs ((f, 1) : factorize (deriv u x))
+  , freeOf x k =
+      if q == -1
+      then pure $ k * log u
+      else pure $ k * u ** ConstE (q+1) / ConstE (q+1)
+  where
+    -- Preserve the original factor for cancellation. Reconstructing it from
+    -- its base and exponent can change constructors under partial evaluation.
+    constantPower :: Exp a -> Maybe (Exp a, Const a)
+    constantPower (FracPowE u q)                 = Just (u, fromRational q)
+    constantPower (FloatBinopE Pow u (ConstE q)) = Just (u, q)
+    constantPower _                              = Nothing
+
 derivDivides u n x fs | freeOf x k =
     if n == -1
     then pure $ k * log u
@@ -211,6 +218,28 @@ derivDivides f@(FloatUnopE op u) n x fs | n == 1 && freeOf x k = do
     k = unfactorize $ divideFactors fs $ factorize (f * deriv u x)
 
 derivDivides _ _ _ _ = mzero
+
+-- | Form a heuristic quotient of factor lists by subtracting exponents.
+-- Remove factors whose resulting exponent is zero.
+divideFactors :: forall a . (Eq a, Floating a, Floating (Const a), IsConst a)
+              => [(Exp a, Const a)] -- ^ Numerator factors
+              -> [(Exp a, Const a)] -- ^ Denominator factors
+              -> [(Exp a, Const a)] -- ^ Quotient factors
+divideFactors ns0 ds0 = [(e, n) | (e, n) <- go ns0 ds0, n /= 0]
+  where
+    go :: [(Exp a, Const a)]
+       -> [(Exp a, Const a)]
+       -> [(Exp a, Const a)]
+    go [] _      = []
+    go ns  []    = ns
+    go ns (d:ds) = go (div1 ns d) ds
+
+    div1 :: [(Exp a, Const a)]
+         -> (Exp a, Const a)
+         -> [(Exp a, Const a)]
+    div1 []            (e', m)             = [(e', -m)]
+    div1 ((e, n) : fs) (e', m) | e' == e   = (e, n-m) : fs
+                               | otherwise = (e, n) : div1 fs (e', m)
 
 -- | Look up a candidate antiderivative for a unary 'Floating' operation.
 -- Operations not represented in the table fail through 'mzero'.
