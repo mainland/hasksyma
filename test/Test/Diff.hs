@@ -38,8 +38,8 @@ diffTests = describe "Differentiation" $ do
         simplify (diff (a * x ^ (2 :: Integer) + b * x + c) x :: Exp Double) @?= 2*a*x + b
     it "log (diff (x + x) x / 2) = 0" $
         simplify (log (diff (x + x) x / 2) :: Exp Double) @?= 0
-    it "log (x + x) - log x = log 2" $
-        simplify ((log (x + x) - log x) :: Exp Double) @?= log 2
+    it "simplifies logarithm arguments without combining the logarithms" $
+        simplify ((log (x + x) - log x) :: Exp Double) @?= log (2*x) - log x
     it "x ** cos pi = 1 / x" $
         simplify (x ** cos pi :: Exp Double) @?= IntPowE x (-1)
     it "diff (3*x^2 + 2*x + 1) x = 6*x + 2" $

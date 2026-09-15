@@ -38,6 +38,15 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 -- There is no rewrite budget. Use 'simplifyWithLimit' to detect cycles or
 -- stop after a bounded number of passes.
 --
+-- Logarithm sums and differences are not combined into logarithms of products
+-- or quotients. Such transformations require domain and branch conditions
+-- that this interface does not carry. Exponential/logarithm cancellation uses
+-- explicit positive integer, rational, or named constants. Taking a logarithm
+-- of a power additionally requires a rational exponent, and 'logBase' requires
+-- a positive base other than one. Unknown conditions leave the operations
+-- intact. Other algebraic rules still have domain restrictions, so this is
+-- not a general guarantee of domain preservation.
+--
 -- >>> :set -XOverloadedStrings
 -- >>> import Hasksyma.Exp (Exp (..), NumBinop (..))
 -- >>> let x = VarE "x" :: Exp Rational
@@ -283,6 +292,15 @@ prodbefore (FloatUnopE op1 _) (FloatUnopE op2 _) = op1 < op2
 
 prodbefore _ _ = False
 
+-- Conservatively recognize positivity from exact syntax, without evaluating
+-- payloads or assuming that variables are real.
+isPositiveExactConstant :: Exp a -> Bool
+isPositiveExactConstant (ConstE (IntegerC n))  = n > 0
+isPositiveExactConstant (ConstE (RationalC q)) = q > 0
+isPositiveExactConstant (ConstE (Pi q))        = q > 0
+isPositiveExactConstant (ConstE E)             = True
+isPositiveExactConstant _                      = False
+
 -- | One-step expression simplification.
 simp :: forall a . (Eq a, Num a, IsConst a) => Exp a -> Exp a
 simp (FracUnopE Recip (FracUnopE Recip x)) = x
@@ -468,7 +486,10 @@ simp (pow -> Just p) = go p
     go (FracPow x q) =
         liftFracPow x q
 
-    go (FloatPow (ConstE E) (FloatUnopE Log x)) =
+    -- This guard preserves real-domain failures at negative x. The identity
+    -- exp(log x) = x holds for nonzero complex x, but the numerical carrier
+    -- need not be complex. Positivity is a conservative sufficient condition.
+    go (FloatPow (ConstE E) (FloatUnopE Log x)) | isPositiveExactConstant x =
         x
 
     go (FloatPow x (ConstE (IntegerC n))) =
@@ -495,42 +516,42 @@ simp (FloatUnopE Cos (ConstE (Pi k)))
 simp (NumBinopE Add (NatPowE (FloatUnopE Sin x) 2) (NatPowE (FloatUnopE Cos x') 2)) | x' == x =
     1
 
+-- Do not combine logarithm sums or differences without branch conditions.
+-- For principal complex logs, log(-1) + log(-1) = 2*pi*i, not log(1),
+-- and log(-i) - log(i) = -pi*i, not log(-1). Positive real arguments
+-- justify both laws, but this interface carries no such assumptions.
+-- The same restriction applies to logBase sums and differences.
+
 -- Simplify logs
 simp (FloatUnopE Log x)
     | x == 1 = 0
 
-simp (FloatUnopE Log (pow -> Just p)) | base p == ConstE E = go p
+-- log(exp z) = z fails across the principal logarithm branch cut.
+-- For z = 2*pi*i, the left side is zero. Cancel only the explicitly
+-- real integral and rational exponents, not a general exponent.
+simp e@(FloatUnopE Log (pow -> Just p)) | base p == ConstE E = go p
   where
-    go (NatPow _ n)   = fromIntegral n
-    go (IntPow _ n)   = fromInteger n
-    go (FracPow _ q)  = fromRational q
-    go (FloatPow _ n) = n
+    go (NatPow _ n)  = fromIntegral n
+    go (IntPow _ n)  = fromInteger n
+    go (FracPow _ q) = fromRational q
+    go FloatPow{}    = e
 
 simp (FloatBinopE LogBase (ConstE E) x) =
     log x
 
-simp (FloatBinopE LogBase _ x)
-    | x == 1 = 0
+-- Use the real-base conditions b > 0 and b /= 1 for these inverse rules.
+-- In particular, logBase 1 1 is an undefined quotient, not zero. General
+-- exponents still need branch information, as for log(exp z) above.
+simp (FloatBinopE LogBase b x)
+    | isPositiveExactConstant b, b /= 1, x == 1 = 0
 
-simp (FloatBinopE LogBase b (pow -> Just p)) | base p == b = go p
+simp e@(FloatBinopE LogBase b (pow -> Just p))
+    | isPositiveExactConstant b, b /= 1, base p == b = go p
   where
-    go (NatPow _ n)   = fromIntegral n
-    go (IntPow _ n)   = fromInteger n
-    go (FracPow _ q)  = fromRational q
-    go (FloatPow _ n) = n
-
--- Combine logs
-simp (NumBinopE Add (FloatUnopE Log x) (FloatUnopE Log y)) =
-    FloatUnopE Log (x * y)
-
-simp (NumBinopE Add (FloatBinopE LogBase b x) (FloatBinopE LogBase b' y)) | b' == b =
-    FloatBinopE LogBase b (x * y)
-
-simp (NumBinopE Sub (FloatUnopE Log x) (FloatUnopE Log y)) =
-    FloatUnopE Log (x / y)
-
-simp (NumBinopE Sub (FloatBinopE LogBase b x) (FloatBinopE LogBase b' y)) | b' == b =
-    FloatBinopE LogBase b (x / y)
+    go (NatPow _ n)  = fromIntegral n
+    go (IntPow _ n)  = fromInteger n
+    go (FracPow _ q) = fromRational q
+    go FloatPow{}    = e
 
 -- Simplify differentiation
 simp (DiffE ConstE{} _) =

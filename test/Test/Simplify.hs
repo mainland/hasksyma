@@ -11,7 +11,7 @@ module Test.Simplify where
 
 import           Control.Exception               (evaluate)
 import           Control.Monad                   (forM_)
-import           Data.Complex                    (Complex (..))
+import           Data.Complex                    (Complex (..), magnitude)
 import           System.Timeout                  (timeout)
 import           Test.Hspec
 import           Test.HUnit
@@ -49,6 +49,8 @@ simplifyTests = describe "Simplification" $ do
     terminationTests
     mapExpTests
     integerLogTests
+    logDomainTests
+    logInverseTests
     fixExpTests
     norvigTests
     prodTests
@@ -89,6 +91,94 @@ identityTests = describe "Expression identity" $ do
       sameExp (IntE Nothing nan "x") (IntE Nothing nan "x") @?= True
       sameExp (IntE Nothing nan "x") (IntE Nothing 1 "x") @?= False
       sameExp (DiffE nan "x") (DiffE nan "y") @?= False
+
+logInverseTests :: Spec
+logInverseTests = describe "Logarithm inverse conditions" $ do
+    it "keeps exp and log when the argument domain is unknown" $
+      sameExp (simplify (FloatUnopE Exp (FloatUnopE Log x)))
+              (FloatBinopE Pow (ConstE E) (FloatUnopE Log x)) @?= True
+    it "keeps log and exp when the exponent branch is unknown" $
+      sameExp (simplify (FloatUnopE Log (FloatUnopE Exp x)))
+              (FloatUnopE Log (FloatBinopE Pow (ConstE E) x)) @?= True
+    it "preserves the real domain failure in exp (log (-2))" $
+      case eval (simplify (FloatUnopE Exp (FloatUnopE Log (-2))) :: Exp Double) of
+        ConstE c -> assertBool "Expected NaN" (isNaN (fromConst c))
+        result   -> assertFailure $ show result
+    it "preserves the principal branch in log (exp (4*i))" $
+      let e = FloatUnopE Log (FloatUnopE Exp (ConstE (Const (0 :+ 4)))) :: Exp (Complex Double)
+      in case (eval e, eval (simplify e)) of
+        (ConstE original, ConstE simplified) ->
+          assertBool "Expected the principal logarithm value"
+                     (magnitude (fromConst original - fromConst simplified) < 1e-12)
+        result -> assertFailure $ show result
+    it "preserves the principal branch in logBase of a complex power" $
+      let e = FloatBinopE LogBase 2 (FloatBinopE Pow 2 (ConstE (Const (0 :+ 6)))) :: Exp (Complex Double)
+      in case (eval e, eval (simplify e)) of
+        (ConstE original, ConstE simplified) ->
+          assertBool "Expected the principal logarithm value"
+                     (magnitude (fromConst original - fromConst simplified) < 1e-12)
+        result -> assertFailure $ show result
+    it "keeps logBase of a power when the base domain is unknown" $
+      let e = FloatBinopE LogBase x (NatPowE x 2)
+      in sameExp (simplify e) e @?= True
+    it "keeps logBase of a power when the exponent branch is unknown" $
+      let e = FloatBinopE LogBase 2 (FloatBinopE Pow 2 x)
+      in sameExp (simplify e) e @?= True
+    it "keeps logBase of one when the base domain is unknown" $
+      let e = FloatBinopE LogBase x 1
+      in sameExp (simplify e) e @?= True
+    forM_ [("unit base", FloatBinopE LogBase 1 1),
+           ("negative base", FloatBinopE LogBase (-2) (NatPowE (-2) 2))] $ \(name, e) ->
+      it ("preserves the real domain failure for a " ++ name) $
+        case eval (simplify e :: Exp Double) of
+          ConstE c -> assertBool "Expected NaN" (isNaN (fromConst c))
+          result   -> assertFailure $ show result
+    it "still cancels exp and log for a positive exact argument" $
+      forM_ [IntegerC 2, RationalC (3/2), Pi 1, E] $ \c ->
+        simplify (FloatUnopE Exp (FloatUnopE Log (ConstE c)) :: Exp Double) @?= ConstE c
+    it "still cancels log and powers for exact rational exponents" $
+      forM_ [(NatPowE (ConstE E) 2, 2),
+             (IntPowE (ConstE E) (-2), ConstE (IntegerC (-2))),
+             (FracPowE (ConstE E) (1/2), ConstE (RationalC (1/2)))] $ \(e, expected) ->
+        simplify (FloatUnopE Log e :: Exp Double) @?= expected
+    it "still cancels logBase for positive exact bases and rational exponents" $ do
+      simplify (FloatBinopE LogBase 2 (FracPowE 2 (1/2)) :: Exp Double) @?= ConstE (RationalC (1/2))
+      simplify (FloatBinopE LogBase 2 1 :: Exp Double) @?= 0
+  where
+    x = VarE "x" :: Exp Double
+
+logDomainTests :: Spec
+logDomainTests = describe "Logarithm domains and branches" $ do
+    forM_ realLogs $ \(name, logarithm) ->
+      forM_ [Add, Sub] $ \op -> do
+        it (name ++ " preserves unknown arguments under " ++ show op) $
+          let e = NumBinopE op (logarithm (VarE "x")) (logarithm (VarE "y"))
+          in sameExp (simplify e) e @?= True
+        it (name ++ " preserves the real domain under " ++ show op) $
+          let e = NumBinopE op (logarithm (ConstE (Const (-1))))
+                              (logarithm (ConstE (Const (-2))))
+          in case (eval e, eval (simplify e)) of
+            (ConstE original, ConstE simplified) -> do
+              assertBool "Original logarithms are outside the real domain" (isNaN (fromConst original))
+              assertBool "Simplification must preserve the domain failure" (isNaN (fromConst simplified))
+            result -> assertFailure $ show result
+    forM_ complexLogs $ \(name, logarithm) ->
+      forM_ [Add, Sub] $ \op ->
+        it (name ++ " preserves the complex branch under " ++ show op) $
+          let z = ConstE (Const ((-1) :+ 1))
+              w = ConstE (Const ((-2) :+ (if op == Add then 1 else -1)))
+              e = NumBinopE op (logarithm z) (logarithm w)
+          in case (eval e, eval (simplify e)) of
+            (ConstE original, ConstE simplified) ->
+              assertBool "Simplification must preserve the principal logarithm value"
+                         (magnitude (fromConst original - fromConst simplified) < 1e-12)
+            result -> assertFailure $ show result
+  where
+    realLogs :: [(String, Exp Double -> Exp Double)]
+    realLogs = [("log", FloatUnopE Log), ("logBase", FloatBinopE LogBase 2)]
+
+    complexLogs :: [(String, Exp (Complex Double) -> Exp (Complex Double))]
+    complexLogs = [("log", FloatUnopE Log), ("logBase", FloatBinopE LogBase 2)]
 
 integerLogTests :: Spec
 integerLogTests = describe "Exact integer logarithm recognition" $ do
@@ -322,10 +412,6 @@ prodTests =
 powTests :: SpecWith ()
 powTests =
     describe "exp/log/pow simplification" $ do
-        it "log (e ** x) = x" $
-          simplify (log (e ** x) :: Exp Double) @?= x
-        it "e ** log x = x" $
-          simplify (e ** log x :: Exp Double) @?= x
         it "(x ** y) * (x ** z) = x ** (y + z)" $
           simplify ((x ** y) * (x ** z) :: Exp Double) @?= x ** (y + z)
         it "(x ** y) / (x ** z) = x ** (y - z)" $
@@ -372,15 +458,10 @@ powTests =
         it "Terminates when ordering rational powers with constant bases" $
           property $ within 1000000 $
             eval (simplify (NumBinopE Mul (FracPowE 0 (1/2)) (FloatUnopE Sqrt 1)) :: Exp Double) === 0
-        it "log x + log y = log (x*y)" $
-          simplify (log x + log y :: Exp Double) @?= log (x*y)
-        it "log x - log y = log (x/y)" $
-          simplify (log x - log y :: Exp Double) @?= log (x/y)
         it "(sin x) ** 2 + (cos x) ** 2 = 1" $
           simplify (sin x ** 2 + cos x ** 2 :: Exp Double) @?= 1
   where
-    e, x, y, z :: Floating a => Exp a
-    e = ConstE E
+    x, y, z :: Floating a => Exp a
     x = VarE "x"
     y = VarE "y"
     z = VarE "z"
