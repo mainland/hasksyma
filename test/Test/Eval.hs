@@ -227,6 +227,25 @@ instance Arbitrary ExactDExp where
 
 evalTests :: Spec
 evalTests = describe "Evaluation" $ do
+    describe "Square root domains" $ do
+      it "retains large perfect integer roots through ordinary and exact evaluation" $
+        forM_ [eval, evalexact] $ \transform ->
+          forM_ [2^(53 :: Integer)+1, 10^(400 :: Integer)] $ \n ->
+            let e = FloatUnopE Sqrt (ConstE (IntegerC (n*n))) :: Exp Double
+            in sameExp (transform e) (ConstE (IntegerC n)) @?= True
+      it "evaluates negative exact real square roots to NaN" $
+        forM_ [IntegerC (-1), RationalC (-1/4)] $ \c ->
+          case eval (FloatUnopE Sqrt (ConstE c) :: Exp Double) of
+            ConstE (Const value) -> isNaN value @?= True
+            result               -> assertFailure $ show result
+      it "leaves negative exact real square roots unreduced during exact evaluation" $
+        forM_ [IntegerC (-1), RationalC (-1/4)] $ \c ->
+          let e = FloatUnopE Sqrt (ConstE c) :: Exp Double
+          in sameExp (evalexact e) e @?= True
+      it "preserves the real domain through overloaded square root construction" $
+        case eval (sqrt (-1) :: Exp Double) of
+          ConstE (Const value) -> isNaN value @?= True
+          result               -> assertFailure $ show result
     describe "Zero division" $ do
       forM_ [("positive quotient", FracBinopE FDiv 1 0, 1/0),
              ("negative quotient", FracBinopE FDiv (ConstE (IntegerC (-1))) 0, -1/0),

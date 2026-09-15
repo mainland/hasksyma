@@ -30,6 +30,10 @@ import           Hasksyma.Exp   (Exp (..), floatbinop, floatunop, fracbinop, fra
 -- infinities or NaNs. Types such as Rational can still raise exceptions.
 -- Use 'evalexact' to leave these known zero-denominator operations unreduced.
 --
+-- Square roots of negative real constants use the underlying floating operation
+-- in both ordinary and cyclotomic builds. Exact evaluation leaves these roots
+-- unreduced.
+--
 -- >>> import Hasksyma.Const (Const (..))
 -- >>> import Hasksyma.Exp (Exp (..), NumBinop (..))
 -- >>> eval (NumBinopE Add (ConstE (Const 2)) (ConstE (Const 3)) :: Exp Integer) == ConstE (Const 5)

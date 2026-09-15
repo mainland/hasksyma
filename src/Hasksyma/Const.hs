@@ -86,6 +86,13 @@ import           Hasksyma.Pretty                 (addPrec)
 -- while rational payloads still raise their division-by-zero exception.
 -- This also applies to negative integer powers of exact zero. Nonzero
 -- rational division retains its exact representation.
+--
+-- Perfect squares stored as 'IntegerC' reduce to 'IntegerC' roots using
+-- integer arithmetic, even beyond the floating payload's precision or range.
+-- Square roots of negative real constants use the underlying floating
+-- operation, including with @cyclotomic@ enabled. These arguments are never
+-- passed to the exact real radical constructor.
+-- Complex payloads retain principal complex square-root semantics.
 data Const a where
     -- | An already evaluated value.
     Const     :: a -> Const a
@@ -490,6 +497,25 @@ liftFloating2 :: (IsConst b, Floating b)
 liftFloating2 f (Const x) (Const y) = Const (f x y)
 liftFloating2 f x         y         = toConst (f (fromConst x) (fromConst y))
 
+-- Recognize a nonnegative perfect square without a floating approximation.
+exactIntegerSqrt :: Integer -> Maybe Integer
+exactIntegerSqrt n
+    | n < 0     = Nothing
+    | n == 0    = Just 0
+    | r*r == n  = Just r
+    | otherwise = Nothing
+  where
+    r = go n
+
+    -- Integer Newton iteration starts above the root. Estimates stay positive
+    -- and never fall below the floor of the root, so division is safe. Stop
+    -- when the estimate no longer decreases to avoid cycling for nonsquares.
+    go x
+        | y >= x    = x
+        | otherwise = go y
+      where
+        y = (x + n `quot` x) `quot` 2
+
 instance Floating (Const Float) where
     pi = Pi 1
 
@@ -498,13 +524,10 @@ instance Floating (Const Float) where
     log E = 1
     log x = liftFloating log x
 
-    sqrt (IntegerC x) | y*y == x = IntegerC y
-      where
-        y :: Integer
-        y = ceiling (sqrt (fromInteger x :: Double))
+    sqrt (IntegerC x) | Just y <- exactIntegerSqrt x = IntegerC y
 #if defined(CYCLOTOMIC)
-    sqrt (IntegerC x)  = RealCycC $ RealCyc.sqrtRat (fromInteger x)
-    sqrt (RationalC x) = RealCycC $ RealCyc.sqrtRat x
+    sqrt (IntegerC x)  | x >= 0 = RealCycC $ RealCyc.sqrtRat (fromInteger x)
+    sqrt (RationalC x) | x >= 0 = RealCycC $ RealCyc.sqrtRat x
 #endif /* defined(CYCLOTOMIC) */
     sqrt x             = liftFloating sqrt x
 
@@ -543,13 +566,10 @@ instance Floating (Const Double) where
     log E = 1
     log x = liftFloating log x
 
-    sqrt (IntegerC x) | y*y == x = IntegerC y
-      where
-        y :: Integer
-        y = ceiling (sqrt (fromInteger x :: Double))
+    sqrt (IntegerC x) | Just y <- exactIntegerSqrt x = IntegerC y
 #if defined(CYCLOTOMIC)
-    sqrt (IntegerC x)  = RealCycC $ RealCyc.sqrtRat (fromInteger x)
-    sqrt (RationalC x) = RealCycC $ RealCyc.sqrtRat x
+    sqrt (IntegerC x)  | x >= 0 = RealCycC $ RealCyc.sqrtRat (fromInteger x)
+    sqrt (RationalC x) | x >= 0 = RealCycC $ RealCyc.sqrtRat x
 #endif /* defined(CYCLOTOMIC) */
     sqrt x             = liftFloating sqrt x
 
@@ -588,10 +608,7 @@ instance RealFloat a => Floating (Const (Complex a)) where
     log E = 1
     log x = liftFloating log x
 
-    sqrt (IntegerC x) | y*y == x = IntegerC y
-      where
-        y :: Integer
-        y = ceiling (sqrt (fromInteger x :: Double))
+    sqrt (IntegerC x) | Just y <- exactIntegerSqrt x = IntegerC y
 #if defined(CYCLOTOMIC)
     sqrt (IntegerC x)  = CycC $ Cyc.sqrtInteger x
     sqrt (RationalC x) = CycC $ Cyc.sqrtRat x

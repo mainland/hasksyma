@@ -21,7 +21,8 @@ import           Data.Complex      (Complex (..))
 import           Data.List         (permutations)
 import           Data.Proxy        (Proxy (Proxy))
 import qualified Data.Set          as Set
-import           Test.Hspec        (Spec, anyArithException, describe, it, shouldBe, shouldThrow)
+import           Test.Hspec        (Spec, anyArithException, describe, expectationFailure, it,
+                                    shouldBe, shouldThrow)
 import           Test.QuickCheck
 
 import           Hasksyma.Const
@@ -147,6 +148,26 @@ prop_float2_equiv _ (FloatBinop _ f p) x y = p (fromConst x) (fromConst y) ==> f
 
 constTests :: Spec
 constTests = describe "Computations with constants" $ do
+    describe "Square root domains" $ do
+      describe "Exact Float squares" $ integerSqrtTests (Proxy :: Proxy Float)
+      describe "Exact Double squares" $ integerSqrtTests (Proxy :: Proxy Double)
+      describe "Exact Complex Float squares" $ integerSqrtTests (Proxy :: Proxy (Complex Float))
+      describe "Exact Complex Double squares" $ integerSqrtTests (Proxy :: Proxy (Complex Double))
+      describe "Float" $ realSqrtDomainTests (Proxy :: Proxy Float)
+      describe "Double" $ realSqrtDomainTests (Proxy :: Proxy Double)
+      it "retains principal complex roots of negative exact constants" $
+        forM_ [IntegerC (-1), IntegerC (-4), RationalC (-1/4)] $ \c -> do
+          samePayload (fromConst (sqrt c :: Const (Complex Double)))
+                      (sqrt (fromConst c)) `shouldBe` True
+#if defined(CYCLOTOMIC)
+          isExact (sqrt c :: Const (Complex Double)) `shouldBe` True
+      it "retains exact positive real radicals" $
+        forM_ [IntegerC 2, RationalC (2/3)] $ \c ->
+          isExact (sqrt c :: Const Double) `shouldBe` True
+#endif
+      it "retains exact nonnegative integer square roots" $
+        forM_ [0, 1, 2, 12 :: Integer] $ \n ->
+          sameConst (sqrt (IntegerC (n*n)) :: Const Double) (IntegerC n) `shouldBe` True
     describe "Zero division" $ do
       describe "Float" $ floatingZeroDivisionTests (Proxy :: Proxy Float)
       describe "Double" $ floatingZeroDivisionTests (Proxy :: Proxy Double)
@@ -342,6 +363,41 @@ constTests = describe "Computations with constants" $ do
         property $ prop_float2_equiv (Proxy :: Proxy Float)
     it "Binary Floating operations over Double correct" $
         property $ prop_float2_equiv (Proxy :: Proxy Double)
+
+integerSqrtTests :: forall a proxy . (Eq a, Num a, IsConst a, Floating (Const a))
+                 => proxy a -> Spec
+integerSqrtTests _ = do
+    it "retains integer roots beyond floating precision and range" $
+      forM_ [0, 1, 2, 12, 2^(53 :: Integer)+1, 10^(200 :: Integer), 10^(400 :: Integer)] $ \n ->
+        sameConst (sqrt (IntegerC (n*n)) :: Const a) (IntegerC n) `shouldBe` True
+    it "recognizes squares of arbitrary large signed integers" $
+      property $ forAll (choose (negate bound, bound)) $ \n ->
+        sameConst (sqrt (IntegerC (n*n)) :: Const a) (IntegerC (abs n))
+    it "does not recognize neighboring nonsquares as integer roots" $
+      forM_ [2, 3, 8, 15, 24, 26] $ \n ->
+        case sqrt (IntegerC n) :: Const a of
+          IntegerC _ -> expectationFailure "A nonsquare reduced to an integer root"
+          _          -> pure ()
+  where
+    bound :: Integer
+    bound = 2^(128 :: Integer)
+
+realSqrtDomainTests :: forall a proxy . (RealFloat a, IsConst a, Floating (Const a))
+                   => proxy a -> Spec
+realSqrtDomainTests _ =
+    it "uses floating semantics for negative real constants" $
+      forM_ negatives $ \c -> do
+        let result = sqrt c
+        samePayload (fromConst result) (sqrt (fromConst c)) `shouldBe` True
+        isExact result `shouldBe` False
+  where
+    negatives :: [Const a]
+    negatives = [IntegerC (-1), IntegerC (-2), RationalC (-1/4), RationalC (-2), Pi (-1), Const (-1)
+                , RationalC (-1 / 10^(1000 :: Integer))
+#if defined(CYCLOTOMIC)
+                , RealCycC (-1)
+#endif
+                ]
 
 floatingZeroDivisionTests :: forall a proxy . (RealFloat a, IsConst a)
                           => proxy a -> Spec
