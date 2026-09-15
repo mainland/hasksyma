@@ -131,6 +131,7 @@ test-suite full
     Test.Integrate
     Test.NoPEval
     Test.PEval
+    Test.Root
     Test.Simplify
 
   build-depends:

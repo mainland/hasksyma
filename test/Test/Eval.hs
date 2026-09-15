@@ -65,7 +65,7 @@ wellDefined e = wd e && check e wellScaled
     wd (FracBinopE FDiv _ y)     = check y (/= 0)
     wd (FloatBinopE Pow x y)     = check2 x y $ \a b ->
                                    a >= 0 && (a /= 0 || b > 0) && abs b <= 10 && isIntegral b
-    wd (FloatBinopE Root x y)    = check2 x y $ \a b -> a >= 0 && b >= 0.1
+    wd (FloatBinopE Root x y)    = check2 x y $ \a b -> b >= 0 && a >= 0.1
     wd (FloatBinopE LogBase x y) = check2 x y $ \a b -> a >= 2 && b > 0
     wd _                         = True
 

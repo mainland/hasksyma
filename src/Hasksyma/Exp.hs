@@ -127,6 +127,18 @@ data FracBinop = FDiv
   deriving (Eq, Ord, Show, Enum, Bounded)
 
 -- | Floating binary operators
+--
+-- @FloatBinopE Root n x@ denotes @x ** recip n@, with degree @n@ first
+-- so partial application constructs roots of a fixed degree. It uses the
+-- underlying type's floating power semantics, including its domain and
+-- branch behavior. In particular, it does not select real odd roots of
+-- negative radicands.
+-- The text printer uses this power form, and the LaTeX printer places @x@
+-- under a radical with index @n@, omitting the index when @n == 2@.
+--
+-- Compatibility: evaluation and simplification previously interpreted the
+-- operands in the reverse order. Swap the operands of existing 'Root'
+-- expressions to preserve their previous evaluated meaning.
 data FloatBinop = Pow
                 | Root
                 | LogBase
@@ -316,7 +328,7 @@ fracbinop FDiv = (/)
 -- | Compute function corresponding 'floatbinop' operator
 floatbinop :: FloatBinop -> (forall a . Floating a => a -> a -> a)
 floatbinop Pow     = (**)
-floatbinop Root    = \t u -> t ** recip u
+floatbinop Root    = \n x -> x ** recip n
 floatbinop LogBase = logBase
 
 -- | Lift a 'NumUnop' operator to an @t'Exp' a@, reducing constants when possible
@@ -693,7 +705,7 @@ instance (Pretty a, Num a, IsConst a, Eq a) => Pretty (Exp a) where
     pprPrec p (FracBinopE op e1 e2) = infixop p op e1 e2
 
     pprPrec p (FloatBinopE Root e1 e2) =
-        infixop p Pow e2 (recip e1)
+        infixop p Pow e2 (FracUnopE Recip e1)
 
     pprPrec p (FloatBinopE LogBase e1 e2) =
         parensIf (p > appPrec) $
