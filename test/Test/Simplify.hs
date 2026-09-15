@@ -53,6 +53,7 @@ simplifyTests = describe "Simplification" $ do
     logInverseTests
     generalPowerDomainTests
     zeroPowerTests
+    zeroDivisionTests
     fixExpTests
     norvigTests
     prodTests
@@ -93,6 +94,29 @@ identityTests = describe "Expression identity" $ do
       sameExp (IntE Nothing nan "x") (IntE Nothing nan "x") @?= True
       sameExp (IntE Nothing nan "x") (IntE Nothing 1 "x") @?= False
       sameExp (DiffE nan "x") (DiffE nan "y") @?= False
+
+zeroDivisionTests :: Spec
+zeroDivisionTests = describe "Division by known zero" $ do
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify'), ("evalexact", evalexact)] $
+      \(name, transform) ->
+        it (name ++ " preserves the division for every numerator and zero representation") $
+          forM_ [0, 1, ConstE (IntegerC (-1)), VarE "x", Undefined, Infty, NegInfty] $ \numerator ->
+            forM_ [IntegerC 0, RationalC 0, Pi 0, Const 0, Const (-0.0)] $ \denominator ->
+              let e = FracBinopE FDiv numerator (ConstE denominator) :: Exp Double
+              in sameExp (transform e) e @?= True
+    it "preserves division by a denominator that simplifies to zero" $
+      let e = FracBinopE FDiv (-1) (NumBinopE Sub 2 2) :: Exp Double
+      in sameExp (simplify e) (FracBinopE FDiv (ConstE (IntegerC (-1))) 0) @?= True
+    it "preserves division by zero with exact rational payloads" $
+      forM_ [0, 1, ConstE (IntegerC (-1))] $ \numerator ->
+        let e = FracBinopE FDiv numerator 0 :: Exp Rational
+        in sameExp (simplify e) e @?= True
+    it "preserves division by zero with complex payloads" $
+      forM_ [0, 1, ConstE (IntegerC (-1)), ConstE (Const (0 :+ 1))] $ \numerator ->
+        let e = FracBinopE FDiv numerator 0 :: Exp (Complex Double)
+        in sameExp (simplify e) e @?= True
+    it "still reduces exact division by a nonzero denominator" $
+      simplify (FracBinopE FDiv (-3) 2 :: Exp Rational) @?= ConstE (RationalC (-3/2))
 
 zeroPowerTests :: Spec
 zeroPowerTests = describe "Integral zero powers" $ do

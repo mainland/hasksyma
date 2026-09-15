@@ -51,6 +51,11 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 -- requires an explicitly positive exact base. Otherwise, retain the general
 -- power to preserve possible domain failures at negative real bases.
 --
+-- Division by a known zero remains unreduced, as in @evalexact@.
+-- No infinity or exceptional-value node is inferred from this operation.
+-- This rule does not define extended arithmetic or guard cancellation at
+-- unknown denominators.
+--
 -- >>> :set -XOverloadedStrings
 -- >>> import Hasksyma.Exp (Exp (..), NumBinop (..))
 -- >>> let x = VarE "x" :: Exp Rational
@@ -331,13 +336,15 @@ simp (NumBinopE Mul x y)
   | y == 1    = x
   | x == y    = NatPowE x 2
 
-simp (FracBinopE FDiv x y)
-  | x == 0 && y == 0 = Undefined
-  | x == 0           = 0
-  | y == 0           = Infty
-  | x == 1           = IntPowE y (-1)
-  | y == 1           = x
-  | x == y           = 1
+-- Leave known-zero division to numerical evaluation. A blanket infinity
+-- would give the wrong sign for (-1)/0 and the wrong behavior for 0/0
+-- or exact rational division.
+simp e@(FracBinopE FDiv x y)
+  | y == 0 = e
+  | x == 0 = 0
+  | x == 1 = IntPowE y (-1)
+  | y == 1 = x
+  | x == y = 1
 
 -- Add constants: x + k1 + k2 = x + (k1 + k2)
 --
