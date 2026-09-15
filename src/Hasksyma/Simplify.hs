@@ -53,8 +53,16 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 --
 -- Division by a known zero remains unreduced, as in @evalexact@.
 -- No infinity or exceptional-value node is inferred from this operation.
--- This rule does not define extended arithmetic or guard cancellation at
--- unknown denominators.
+-- Cancel structurally identical operands in @u/u@ and matching factors in
+-- @(u*v)/u@ and @u*(v/u)@, including reversed factor orders. Reduce @0/u@
+-- to zero unless @u@ is a known zero. These rules may extend the source domain,
+-- including for nonfinite payloads and exceptional operands. Construction and
+-- @evalexact@ retain unknown quotients. Combining different powers in a quotient,
+-- or eliminating a negative exponent when combining powers, still requires an
+-- explicit nonzero integer, rational, or named constant.
+-- Cancelling nested reciprocals or flattening two negative integer powers
+-- also requires an explicitly nonzero exact base. Otherwise the inner
+-- reciprocal remains present, even if the combined exponent is positive.
 --
 -- Differentiating @log (abs u)@ retains the unresolved derivative of @abs u@.
 -- The shortcut @u'/u@ requires nonzero real arguments and is invalid for general
@@ -243,8 +251,15 @@ joinPowWith f (FloatPow e1 n) (FracPow e2 q)  = f (FloatPow e1 n) (FloatPow e2 (
 -- General floating exponents can become integral after combining, erasing a
 -- domain failure at a negative real base. A positive exact base justifies the
 -- exponent law. Fractional powers with unknown bases retain the more limited
--- check against combining into an integral exponent.
+-- check against combining into an integral exponent. Combining a negative
+-- exponent into a nonnegative one additionally requires a known nonzero base.
 canCombinePowers :: (Rational -> Rational -> Rational) -> Pow a -> Pow a -> Bool
+-- For example, x^(-1) * x would become one and lose x /= 0.
+-- This guard is intentionally stricter than ordinary factor cancellation.
+canCombinePowers f p1 p2
+    | Just q <- rationalPower p1, Just r <- rationalPower p2
+    , q < 0 || r < 0, f q r >= 0
+    , not (isNonzeroExactConstant (base p1)) = False
 canCombinePowers _ (FloatPow x _) _ = isPositiveExactConstant x
 canCombinePowers _ _ (FloatPow x _) = isPositiveExactConstant x
 canCombinePowers f (FracPow _ q) p =
@@ -323,9 +338,21 @@ isPositiveExactConstant (ConstE (Pi q))        = q > 0
 isPositiveExactConstant (ConstE E)             = True
 isPositiveExactConstant _                      = False
 
+-- Nonzero evidence must come from exact syntax, not inequality with zero:
+-- opaque payloads can contain infinities or NaNs, and variables can be zero.
+isNonzeroExactConstant :: Exp a -> Bool
+isNonzeroExactConstant (ConstE (IntegerC n))  = n /= 0
+isNonzeroExactConstant (ConstE (RationalC q)) = q /= 0
+isNonzeroExactConstant (ConstE (Pi q))        = q /= 0
+isNonzeroExactConstant (ConstE E)             = True
+isNonzeroExactConstant _                      = False
+
 -- | One-step expression simplification.
 simp :: forall a . (Eq a, Num a, IsConst a) => Exp a -> Exp a
-simp (FracUnopE Recip (FracUnopE Recip x)) = x
+-- Keep nested inverses unless the base is known nonzero: cancelling
+-- recip (recip 0) would erase the inner singularity. This is a
+-- conservative policy, unlike the domain-extending factor rules below.
+simp (FracUnopE Recip (FracUnopE Recip x)) | isNonzeroExactConstant x = x
 
 simp (NumBinopE Add x y)
   | x == 0  = y
@@ -349,11 +376,24 @@ simp (NumBinopE Mul x y)
 -- would give the wrong sign for (-1)/0 and the wrong behavior for 0/0
 -- or exact rational division.
 simp e@(FracBinopE FDiv x y)
-  | y == 0 = e
-  | x == 0 = 0
-  | x == 1 = IntPowE y (-1)
-  | y == 1 = x
-  | x == y = 1
+  | y == 0      = e
+  | x == 0      = 0
+  | x == 1      = IntPowE y (-1)
+  | y == 1      = x
+  | sameExp x y = 1
+
+-- Cancel matching factors before rearranging products and quotients.
+simp (NumBinopE Mul x (FracBinopE FDiv y x')) | sameExp x' x =
+    y
+
+simp (NumBinopE Mul (FracBinopE FDiv y x) x') | sameExp x' x =
+    y
+
+simp (FracBinopE FDiv (NumBinopE Mul x y) x') | sameExp x' x =
+    y
+
+simp (FracBinopE FDiv (NumBinopE Mul y x) x') | sameExp x' x =
+    y
 
 -- Add constants: x + k1 + k2 = x + (k1 + k2)
 --
@@ -435,19 +475,6 @@ simp (FracBinopE FDiv (NumBinopE Add y z) x) =
 simp (FracBinopE FDiv (NumBinopE Sub y z) x) =
     y/x - z/x
 
--- Identities of the form x*y/x
-simp (NumBinopE Mul x (FracBinopE FDiv y x')) | x' == x =
-    y
-
-simp (NumBinopE Mul (FracBinopE FDiv y x) x') | x' == x =
-    y
-
-simp (FracBinopE FDiv (NumBinopE Mul x y) x') | x' == x =
-    y
-
-simp (FracBinopE FDiv (NumBinopE Mul y x) x') | x' == x =
-    y
-
 -- Simplify exponentiation
 simp (NumBinopE Mul (IntPowE x n) y) | n < 0 =
     y / NatPowE x (fromInteger (-n))
@@ -460,8 +487,11 @@ simp (NumBinopE Mul (NumBinopE Mul e (pow -> Just p1)) (pow -> Just p2))
     | base p1 == base p2, canCombinePowers (+) p1 p2 =
     NumBinopE Mul e $ joinPowWith mulPowers p1 p2
 
+-- Subtracting exponents can erase excluded zeros: x^3/x^2 becomes x.
+-- Retain the nonzero-base guard as a conservative power-rule policy,
+-- even though matching-factor cancellation above permits domain extension.
 simp (FracBinopE FDiv (pow -> Just p1) (pow -> Just p2))
-    | base p1 == base p2, canCombinePowers (-) p1 p2 =
+    | base p1 == base p2, isNonzeroExactConstant (base p1), canCombinePowers (-) p1 p2 =
     joinPowWith go p1 p2
   where
     go (NatPow x n)   (NatPow _ m)   = IntPowE x (toInteger n - toInteger m)
@@ -502,7 +532,11 @@ simp (pow -> Just p) = go p
     go (IntPow e@(pow -> Just p1) n) =
         case p1 of
           NatPow x m   -> IntPowE x (n*toInteger m)
-          IntPow x m   -> IntPowE x (n*m)
+          -- Only negative outer exponents reach this branch. Flattening a
+          -- negative inner exponent would remove its nonzero requirement.
+          IntPow x m
+            | m >= 0 || isNonzeroExactConstant x -> IntPowE x (n*m)
+            | otherwise                          -> liftIntPow e n
           FracPow{}    -> liftIntPow e n
           FloatPow x m
             | isPositiveExactConstant x -> FloatBinopE Pow x (fromInteger n*m)

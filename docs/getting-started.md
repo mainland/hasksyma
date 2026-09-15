@@ -78,3 +78,20 @@ powers over `Rational`. Derived `Show` and `Ord` results also change.
     `diff` expects its second argument to be a `VarE` expression and reports an
     error otherwise. The expression constructors remain available when more
     direct control is required.
+
+## Simplification and domains
+
+Explicit `simplify` performs algebraic rewrites that can extend an expression's
+domain. For example, `x/x` reduces to one, `0/x` to zero, and `(x*y)/x` or
+`x*(y/x)` to `y`, including reversed factor orders. These results no longer
+exclude `x = 0`. The result does not carry the original exclusions or a proof,
+and simplification does not promise identical floating-point rounding,
+overflow, or nonfinite evaluation. Matching factors use structural identity.
+
+Division by a known zero still remains unreduced. Rules that combine different
+powers or cancel nested inverses remain more conservative and require explicit
+nonzero constants before removing the relevant exclusions.
+
+Construction and `evalexact` retain unknown quotients. This preserves the source
+syntax for callers that need to inspect its domain before choosing a
+simplification operation.

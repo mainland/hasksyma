@@ -55,10 +55,12 @@ diffTests = describe "Differentiation" $ do
         simplify (x ** cos pi :: Exp Double) @?= IntPowE x (-1)
     it "diff (3*x^2 + 2*x + 1) x = 6*x + 2" $
         simplify (diff (3*x^(2 :: Integer) + 2*x + 1) x :: Exp Double) @?= 6*x + 2
-    it "diff (3*x + cos x/x) x = -sin x/x - cos x /x^2 + 3" $
-        simplify (diff (3*x + cos x/x) x :: Exp Double) @?= -sin x/x - cos x/NatPowE x 2 + 3
-    it "diff (cos x / x) x = -sin x/x - cos x /x^2" $
-        simplify (diff (cos x / x) x :: Exp Double) @?= -sin x/x - cos x/NatPowE x 2
+    it "differentiates 3*x + cos x/x without cancelling the denominator" $
+        simplify (diff (3*x + cos x/x) x :: Exp Double) @?=
+          simplify (-x*sin x/NatPowE x 2 - cos x/NatPowE x 2 + 3)
+    it "differentiates cos x/x without cancelling the denominator" $
+        simplify (diff (cos x / x) x :: Exp Double) @?=
+          simplify (-x*sin x/NatPowE x 2 - cos x/NatPowE x 2)
     it "sin (x + x)^2 + cos (diff (x^2) x)^2 = 1" $
         simplify (sin (x + x)^(2 :: Integer) + cos (diff (x^(2 :: Integer)) x)^(2 :: Integer) :: Exp Double) @?= 1
     it "sin (x + x) * sin (diff (x^2) x) + cos(2*x) * cos(x * diff (2*y) y) = 1" $

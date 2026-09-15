@@ -54,6 +54,9 @@ simplifyTests = describe "Simplification" $ do
     generalPowerDomainTests
     zeroPowerTests
     zeroDivisionTests
+    denominatorCancellationTests
+    cancellationDomainTests
+    inverseDomainTests
     exactNegationTests
     fixExpTests
     norvigTests
@@ -67,6 +70,150 @@ simplifyTests = describe "Simplification" $ do
 
     tensec :: Int
     tensec = 10 * 1000000
+
+inverseDomainTests :: Spec
+inverseDomainTests = describe "Cancellation of nested inverses" $ do
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
+      forM_ inverseForms $ \(caseName, e) ->
+        it (name ++ " preserves rational division by zero in " ++ caseName) $ do
+          evaluate (rationalValue (atZero e)) `shouldThrow` anyArithException
+          evaluate (rationalValue (atZero (transform e))) `shouldThrow` anyArithException
+          rationalValue (atTwo (transform e)) @?= rationalValue (atTwo e)
+    forM_ inverseForms $ \(caseName, e) ->
+      it ("preserves complex zero failures in " ++ caseName) $
+        case eval (atZero (simplify e)) :: Exp (Complex Double) of
+          ConstE c -> samePayload (fromConst c) ((0/0) :+ (0/0)) @?= True
+          result   -> assertFailure (show result)
+    it "still reduces nested inverses of explicit nonzero constants" $
+      forM_ [IntegerC 2, IntegerC (-2), RationalC (3/2), Pi 1, E] $ \c ->
+        simp (FracUnopE Recip (FracUnopE Recip (ConstE c)) :: Exp Double) @?= ConstE c
+    it "still flattens negative powers of a known nonzero named constant" $
+      simplify (IntPowE (IntPowE (ConstE E) (-3)) (-2) :: Exp Double) @?= NatPowE (ConstE E) 6
+  where
+    inverseForms :: Fractional a => [(String, Exp a)]
+    inverseForms =
+      [ ("recip (recip x)", FracUnopE Recip (FracUnopE Recip x))
+      , ("(x^^(-1))^^(-1)", IntPowE (IntPowE x (-1)) (-1))
+      , ("(x^^(-3))^^(-2)", IntPowE (IntPowE x (-3)) (-2))
+      , ("recip (x^^(-2))", FracUnopE Recip (IntPowE x (-2)))
+      ]
+      where
+        x = VarE "x"
+
+    atZero, atTwo :: (Eq a, Num a, IsConst a) => Exp a -> Exp a
+    atZero = mapExp $ \e -> case e of
+                            VarE "x" -> ConstE (IntegerC 0)
+                            _        -> e
+    atTwo = mapExp $ \e -> case e of
+                           VarE "x" -> ConstE (IntegerC 2)
+                           _        -> e
+
+    rationalValue :: Exp Rational -> Rational
+    rationalValue e = case eval e of
+                        ConstE c -> fromConst c
+                        result   -> error (show result)
+
+denominatorCancellationTests :: Spec
+denominatorCancellationTests = describe "Algebraic denominator cancellation" $ do
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
+      forM_ expressions $ \(caseName, e, expected) ->
+        it (name ++ " cancels " ++ caseName ++ " on the source domain") $ do
+          sameExp (transform e) expected @?= True
+          forM_ [-3, -1, 1, 2] $ \value ->
+            eval (at value (transform e)) @?= eval (at value e)
+          evaluate (rationalValue (at 0 e)) `shouldThrow` anyArithException
+          rationalValue (at 0 (transform e)) @?= rationalValue (at 0 expected)
+    forM_ expressions $ \(caseName, e, _) ->
+      it ("evalexact retains the zero exclusion in " ++ caseName) $
+        evaluate (rationalValue (at 0 (evalexact e))) `shouldThrow` anyArithException
+    it "retains unknown quotients during construction" $ do
+      sameExp (x / x) (FracBinopE FDiv x x) @?= True
+      sameExp (0 / x) (FracBinopE FDiv 0 x) @?= True
+    forM_ [("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
+      it (name ++ " cancels x*recip x after exposing the quotient") $ do
+        let e = NumBinopE Mul x (FracUnopE Recip x)
+        sameExp (transform e) 1 @?= True
+        forM_ [-2, 2] $ \value ->
+          eval (at value (transform e)) @?= eval (at value e)
+        evaluate (rationalValue (at 0 e)) `shouldThrow` anyArithException
+    it "cancels matching complex factors without a positivity assumption" $ do
+      let cx = VarE "x" :: Exp (Complex Double)
+          cy = VarE "y"
+          e = FracBinopE FDiv (NumBinopE Mul cx cy) cx
+      sameExp (simplify e) cy @?= True
+      eval (at (0 :+ 2) (simplify e)) @?= eval (at (0 :+ 2) e)
+    it "does not cancel different factors" $
+      sameExp (simp (FracBinopE FDiv (NumBinopE Mul x y) (VarE "z")))
+              (FracBinopE FDiv (NumBinopE Mul x y) (VarE "z")) @?= True
+    it "allows domain extension for identical nonfinite and exceptional operands" $
+      forM_ [ConstE (Const (1/0)), ConstE (Const (0/0)), Undefined, Infty, NegInfty] $ \e ->
+        sameExp (simp (FracBinopE FDiv e e) :: Exp Double) 1 @?= True
+  where
+    x, y :: Exp Rational
+    x = VarE "x"
+    y = VarE "y"
+
+    expressions :: [(String, Exp Rational, Exp Rational)]
+    expressions =
+      [ ("0/x", FracBinopE FDiv 0 x, 0)
+      , ("x/x", FracBinopE FDiv x x, 1)
+      , ("x*(y/x)", NumBinopE Mul x (FracBinopE FDiv y x), y)
+      , ("(y/x)*x", NumBinopE Mul (FracBinopE FDiv y x) x, y)
+      , ("(x*y)/x", FracBinopE FDiv (NumBinopE Mul x y) x, y)
+      , ("(y*x)/x", FracBinopE FDiv (NumBinopE Mul y x) x, y)
+      ]
+
+    at :: (Eq a, Num a, IsConst a) => a -> Exp a -> Exp a
+    at value = mapExp $ \e -> case e of
+                               VarE "x" -> ConstE (Const value)
+                               VarE "y" -> 3
+                               _        -> e
+
+    rationalValue :: Exp Rational -> Rational
+    rationalValue e = case eval e of
+                       ConstE c -> fromConst c
+                       result   -> error (show result)
+
+cancellationDomainTests :: Spec
+cancellationDomainTests = describe "Cancellation domains" $ do
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
+      forM_ expressions $ \(caseName, e) ->
+        it (name ++ " preserves the zero-denominator failure in " ++ caseName) $ do
+          assertNaN (eval (at 0 e))
+          assertNaN (eval (at 0 (transform e)))
+          eval (at 2 (transform e)) @?= eval (at 2 e)
+    it "still cancels explicit nonzero exact factors" $
+      forM_ [IntegerC 2, IntegerC (-2), RationalC (3/2), Pi 1, Pi (-1), E] $ \c -> do
+        let k = ConstE c :: Exp Double
+        simplify (FracBinopE FDiv k k) @?= 1
+        simplify (FracBinopE FDiv 0 k) @?= 0
+        simplify (FracBinopE FDiv (NumBinopE Mul k y) k) @?= y
+  where
+    x, y :: Exp Double
+    x = VarE "x"
+    y = VarE "y"
+
+    expressions :: [(String, Exp Double)]
+    expressions =
+      [ ("x^5/x^2", FracBinopE FDiv (NatPowE x 5) (NatPowE x 2))
+      , ("x^2/x^5", FracBinopE FDiv (NatPowE x 2) (NatPowE x 5))
+      , ("x^2*x^^(-1)", NumBinopE Mul (NatPowE x 2) (IntPowE x (-1)))
+      , ("2*x^2*x^^(-1)", NumBinopE Mul (NumBinopE Mul 2 (NatPowE x 2)) (IntPowE x (-1)))
+      , ("fractional-power quotient", FracBinopE FDiv (FracPowE x (5/2)) (FracPowE x (1/2)))
+      , ("fractional and integer quotient", FracBinopE FDiv (FracPowE x (5/2)) x)
+      , ("fractional and negative power product", NumBinopE Mul (FracPowE x (5/2)) (IntPowE x (-1)))
+      ]
+
+    at :: Double -> Exp Double -> Exp Double
+    at value = mapExp replace
+      where
+        replace (VarE "x") = ConstE (Const value)
+        replace (VarE "y") = 2
+        replace e          = e
+
+    assertNaN :: Exp Double -> Assertion
+    assertNaN (ConstE c) = assertBool (show c) (isNaN (fromConst c))
+    assertNaN e          = assertFailure (show e)
 
 exactNegationTests :: Spec
 exactNegationTests = describe "Exact negation" $ do
@@ -515,8 +662,9 @@ norvigTests = do
           simplify (2 * x * 3 * y * 4 * z * 5 * 6 :: Exp Double) @?= 720 * x * y * z
         it "3 + x + 4 + x = 2*x + 7" $
           simplify (3 + x + 4 + x :: Exp Double) @?= 2*x + 7
-        it "2 * x * 3 * x * 4 * (1 / x) * 5 * 6 = 720 * x" $
-          simplify (2 * x * 3 * x * 4 * ( 1 / x ) * 5 * 6 :: Exp Double) @?= 720 * x
+        it "collects coefficients without cancelling the reciprocal in 2*x*3*x*4*(1/x)*5*6" $
+          simplify (2 * x * 3 * x * 4 * (1/x) * 5 * 6 :: Exp Double) @?=
+            720 * IntPowE x (-1) * NatPowE x 2
   where
     x, y, z :: Exp a
     x = VarE "x"
@@ -544,20 +692,25 @@ powTests =
     describe "exp/log/pow simplification" $ do
         it "recip (x ^ 3) = x ^^ (-3)" $
           simplify (FracUnopE Recip (NatPowE x 3) :: Exp Double) @?= IntPowE x (-3)
-        it "x ^ 2 / x ^ 5 = x ^^ (-3)" $
-          simplify (FracBinopE FDiv (NatPowE x 2) (NatPowE x 5) :: Exp Double) @?= IntPowE x (-3)
-        it "x ^ 5 / x ^ 2 = x ^ 3" $
-          simplify (FracBinopE FDiv (NatPowE x 5) (NatPowE x 2) :: Exp Double) @?= NatPowE x 3
+        it "preserves the denominator in x ^ 2 / x ^ 5" $
+          let e = FracBinopE FDiv (NatPowE x 2) (NatPowE x 5) :: Exp Double
+          in sameExp (simplify e) e @?= True
+        it "preserves the denominator in x ^ 5 / x ^ 2" $
+          let e = FracBinopE FDiv (NatPowE x 5) (NatPowE x 2) :: Exp Double
+          in sameExp (simplify e) e @?= True
         it "(x ^^ (-2)) ^ 3 = x ^^ (-6)" $
           simplify (NatPowE (IntPowE x (-2)) 3 :: Exp Double) @?= IntPowE x (-6)
         it "(x ^ 3) ^^ (-2) = x ^^ (-6)" $
           simplify (IntPowE (NatPowE x 3) (-2) :: Exp Double) @?= IntPowE x (-6)
-        it "(x ^^ (-3)) ^^ (-2) = x ^ 6" $
-          simplify (IntPowE (IntPowE x (-3)) (-2) :: Exp Double) @?= NatPowE x 6
-        it "x ^ 2 * x ^^ (-5) = x ^^ (-3)" $
-          simplify (NumBinopE Mul (NatPowE x 2) (IntPowE x (-5)) :: Exp Double) @?= IntPowE x (-3)
-        it "x ^^ (-5) * x ^ 2 = x ^^ (-3)" $
-          simplify (NumBinopE Mul (IntPowE x (-5)) (NatPowE x 2) :: Exp Double) @?= IntPowE x (-3)
+        it "preserves both negative powers in (x ^^ (-3)) ^^ (-2)" $
+          let e = IntPowE (IntPowE x (-3)) (-2) :: Exp Double
+          in sameExp (simplify e) e @?= True
+        it "preserves the zero singularity in x ^ 2 * x ^^ (-5)" $
+          simplify (NumBinopE Mul (NatPowE x 2) (IntPowE x (-5)) :: Exp Double) @?=
+            FracBinopE FDiv (NatPowE x 2) (NatPowE x 5)
+        it "preserves the zero singularity in x ^^ (-5) * x ^ 2" $
+          simplify (NumBinopE Mul (IntPowE x (-5)) (NatPowE x 2) :: Exp Double) @?=
+            FracBinopE FDiv (NatPowE x 2) (NatPowE x 5)
         it "A nonnegative integral rational exponent becomes a natural power" $
           simplify (FracPowE x 3 :: Exp Double) @?= NatPowE x 3
         it "A negative integral rational exponent becomes an integer power" $
