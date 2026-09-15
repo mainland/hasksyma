@@ -24,10 +24,13 @@ module Hasksyma.Const (
   Const(..),
   IsConst(..),
   isExact,
-  sameConst
+  sameConst,
+  toRationalMaybe,
+  toIntegerMaybe
 ) where
 
 import           Data.Complex                    (Complex (..))
+import           Data.Ratio                      (denominator, numerator)
 #if defined(CYCLOTOMIC)
 import           Data.Complex.Cyclotomic         (Cyclotomic (..))
 import qualified Data.Complex.Cyclotomic         as Cyc
@@ -93,6 +96,15 @@ import           Hasksyma.Pretty                 (addPrec)
 -- operation, including with @cyclotomic@ enabled. These arguments are never
 -- passed to the exact real radical constructor.
 -- Complex payloads retain principal complex square-root semantics.
+--
+-- Numeric projections are partial. 'toRational' accepts exact rational
+-- representations, and 'toInteger' accepts exact integer representations.
+-- 'fromEnum' delegates rational representations to their 'Enum' instance.
+-- These operations reject unsupported symbolic constants instead of silently
+-- approximating them. For @Const@ payloads they delegate to the underlying
+-- type, inheriting its conversion behavior and possible exceptions.
+-- Use 'toRationalMaybe' and 'toIntegerMaybe' for checked exact projections.
+-- To request numerical evaluation explicitly, apply 'fromConst' first.
 data Const a where
     -- | An already evaluated value.
     Const     :: a -> Const a
@@ -134,8 +146,9 @@ class IsConst a where
     toConst x = Const x
 
     -- | Return the exact rational value of an evaluated payload when supported.
-    -- Used for comparison only, without approximating symbolic constants or
-    -- changing the stored representation. Return 'Nothing' for opaque values.
+    -- Used for comparison and checked projection, without approximating
+    -- symbolic constants or changing their stored representation.
+    -- Return 'Nothing' for opaque values.
     -- A supplied rational must represent the payload exactly.
     --
     -- Built-in integral and rational instances provide their exact values.
@@ -195,6 +208,36 @@ isExact RealCycC{}  = True
 isExact CycC{}      = True
 #endif /* defined(CYCLOTOMIC) */
 isExact _           = False
+
+-- | Project a supported exact rational value without approximation.
+--
+-- Integer and rational constants, zero multiples of pi, and rational
+-- cyclotomic constants are supported. Evaluated payloads use 'exactRational',
+-- so finite built-in floating values yield their exact binary rationals.
+-- Nonfinite or opaque payloads, nonreal complex values, and unsupported
+-- irrational constants return 'Nothing'. This does not change 'isExact'.
+toRationalMaybe :: IsConst a => Const a -> Maybe Rational
+toRationalMaybe (Const x) = exactRational x
+toRationalMaybe c         = symbolicRational c
+
+-- | Project a supported exact integer value without rounding or truncation.
+-- Return 'Nothing' when 'toRationalMaybe' fails or yields a noninteger.
+toIntegerMaybe :: IsConst a => Const a -> Maybe Integer
+toIntegerMaybe c = do
+    q <- toRationalMaybe c
+    if denominator q == 1 then Just (numerator q) else Nothing
+
+-- Independent of the payload's IsConst instance, so Enum can project exact
+-- symbolic values without strengthening its existing instance constraint.
+symbolicRational :: Const a -> Maybe Rational
+symbolicRational (IntegerC n)                  = Just (fromInteger n)
+symbolicRational (RationalC q)                 = Just q
+symbolicRational (Pi 0)                        = Just 0
+#if defined(CYCLOTOMIC)
+symbolicRational (RealCycC (RealCyclotomic x)) = Cyc.toRat x
+symbolicRational (CycC x)                      = Cyc.toRat x
+#endif
+symbolicRational _                             = Nothing
 
 -- Coerce constants to a common representation for arithmetic. The fallback
 -- may approximate symbolic values, so comparison must not use this function.
@@ -386,28 +429,20 @@ instance (IsConst a, Num a) => Num (Const a) where
     fromInteger x = IntegerC x
 
 instance (IsConst a, Real a) => Real (Const a) where
-    toRational (Const x)     = toRational x
-    toRational Pi{}          = error "can't happen"
-    toRational E{}           = error "can't happen"
-    toRational (IntegerC x)  = fromInteger x
-    toRational (RationalC x) = x
-#if defined(CYCLOTOMIC)
-    toRational RealCycC{}    = error "can't happen"
-    toRational CycC{}        = error "can't happen"
-#endif /* defined(CYCLOTOMIC) */
+    toRational (Const x) = toRational x
+    toRational c         = case symbolicRational c of
+                             Just q  -> q
+                             Nothing -> error "toRational: constant has no supported exact rational projection"
 
 instance Enum a => Enum (Const a) where
     toEnum x = Const (toEnum x)
 
     fromEnum (Const x)     = fromEnum x
-    fromEnum Pi{}          = error "can't happen"
-    fromEnum E{}           = error "can't happen"
     fromEnum (IntegerC x)  = fromEnum x
     fromEnum (RationalC x) = fromEnum x
-#if defined(CYCLOTOMIC)
-    fromEnum RealCycC{}    = error "can't happen"
-    fromEnum CycC{}        = error "can't happen"
-#endif /* defined(CYCLOTOMIC) */
+    fromEnum c             = case symbolicRational c of
+                               Just q  -> fromEnum q
+                               Nothing -> error "fromEnum: constant requires explicit evaluation"
 
 instance (IsConst a, Integral a) => Integral (Const a) where
     quot = liftIntegral2 quot
@@ -420,14 +455,10 @@ instance (IsConst a, Integral a) => Integral (Const a) where
     x `divMod` y = (x `div` y, x `mod` y)
 
     toInteger (Const x)    = toInteger x
-    toInteger Pi{}         = error "can't happen"
-    toInteger E{}          = error "can't happen"
     toInteger (IntegerC x) = x
-    toInteger RationalC{}  = error "can't happen"
-#if defined(CYCLOTOMIC)
-    toInteger RealCycC{}   = error "can't happen"
-    toInteger CycC{}       = error "can't happen"
-#endif /* defined(CYCLOTOMIC) */
+    toInteger c            = case toIntegerMaybe c of
+                               Just n  -> n
+                               Nothing -> error "toInteger: constant has no supported exact integer projection"
 
 -- | Lift a unary operation on 'Num' to the type 'Const a'
 liftFractional :: (IsConst b, Fractional b)

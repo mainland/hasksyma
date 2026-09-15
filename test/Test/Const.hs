@@ -12,17 +12,14 @@
 
 module Test.Const where
 
-#if defined(CYCLOTOMIC)
-import           Test.Hspec        (errorCall)
-#endif
 import           Control.Exception (evaluate)
 import           Control.Monad     (forM_)
 import           Data.Complex      (Complex (..))
 import           Data.List         (permutations)
 import           Data.Proxy        (Proxy (Proxy))
 import qualified Data.Set          as Set
-import           Test.Hspec        (Spec, anyArithException, describe, expectationFailure, it,
-                                    shouldBe, shouldThrow)
+import           Test.Hspec        (Spec, anyArithException, describe, errorCall,
+                                    expectationFailure, it, shouldBe, shouldThrow)
 import           Test.QuickCheck
 
 import           Hasksyma.Const
@@ -148,6 +145,64 @@ prop_float2_equiv _ (FloatBinop _ f p) x y = p (fromConst x) (fromConst y) ==> f
 
 constTests :: Spec
 constTests = describe "Computations with constants" $ do
+    describe "Constant projections" $ do
+      it "converts zero multiples of pi without approximation" $ do
+        toRational (Pi 0 :: Const Double) `shouldBe` 0
+        fromEnum (Pi 0 :: Const Double) `shouldBe` 0
+      it "explains unsupported exact rational conversions" $
+        forM_ [Pi 1, E :: Const Double] $ \c ->
+          evaluate (toRational c) `shouldThrow`
+            errorCall "toRational: constant has no supported exact rational projection"
+      it "explains unsupported symbolic enumeration" $
+        forM_ [Pi 1, E :: Const Double] $ \c ->
+          evaluate (fromEnum c) `shouldThrow`
+            errorCall "fromEnum: constant requires explicit evaluation"
+      it "projects large integers without passing through the payload type" $
+        forM_ [0, -3, 2^(53 :: Integer)+1, 10^(400 :: Integer)] $ \n -> do
+          toRationalMaybe (IntegerC n :: Const Double) `shouldBe` Just (fromInteger n)
+          toIntegerMaybe (IntegerC n :: Const Double) `shouldBe` Just n
+      it "projects rational values without rounding or truncating fractions" $ do
+        toRationalMaybe (RationalC (3/2) :: Const Double) `shouldBe` Just (3/2)
+        toIntegerMaybe (RationalC (3/2) :: Const Double) `shouldBe` Nothing
+        toIntegerMaybe (RationalC (-2) :: Const Double) `shouldBe` Just (-2)
+      it "recognizes zero pi and rejects irrational named constants" $ do
+        toRationalMaybe (Pi 0 :: Const Double) `shouldBe` Just 0
+        toIntegerMaybe (Pi 0 :: Const Double) `shouldBe` Just 0
+        forM_ [Pi 1, Pi (-1), E :: Const Double] $ \c -> do
+          toRationalMaybe c `shouldBe` Nothing
+          toIntegerMaybe c `shouldBe` Nothing
+      it "projects the exact binary value of an evaluated float" $ do
+        toRationalMaybe (Const (0.1 :: Double)) `shouldBe` Just (toRational (0.1 :: Double))
+        toIntegerMaybe (Const (2 :: Float)) `shouldBe` Just 2
+        isExact (Const (2 :: Float)) `shouldBe` False
+      it "rejects nonfinite floating payloads" $
+        forM_ [0/0, 1/0, -1/0 :: Double] $ \value -> do
+          toRationalMaybe (Const value) `shouldBe` Nothing
+          toIntegerMaybe (Const value) `shouldBe` Nothing
+      it "projects real complex payloads but rejects nonreal values" $ do
+        toRationalMaybe (Const (0.5 :+ 0) :: Const (Complex Double)) `shouldBe` Just (1/2)
+        toIntegerMaybe (Const (2 :+ 0) :: Const (Complex Double)) `shouldBe` Just 2
+        toRationalMaybe (Const (2 :+ 1) :: Const (Complex Double)) `shouldBe` Nothing
+      it "leaves opaque payloads unsupported without rejecting their exact syntax" $ do
+        toRationalMaybe (Const (WithDefaultConst (1 :: Integer))) `shouldBe` Nothing
+        toIntegerMaybe (Const (WithDefaultConst (1 :: Integer))) `shouldBe` Nothing
+        toIntegerMaybe (IntegerC 1 :: Const (WithDefaultConst Integer)) `shouldBe` Just 1
+      it "preserves native and existing exact instance conversions" $ do
+        toRational (Const (0.1 :: Double)) `shouldBe` toRational (0.1 :: Double)
+        fromEnum (RationalC (3/2) :: Const Double) `shouldBe` fromEnum (3/2 :: Rational)
+        toInteger (IntegerC (10^(100 :: Integer)) :: Const Int) `shouldBe` 10^(100 :: Integer)
+#if defined(CYCLOTOMIC)
+      it "projects rational cyclotomic constants exactly" $ do
+        toRationalMaybe (RealCycC (3/2) :: Const Double) `shouldBe` Just (3/2)
+        toIntegerMaybe (RealCycC 2 :: Const Double) `shouldBe` Just 2
+        toRational (RealCycC (3/2) :: Const Double) `shouldBe` 3/2
+        fromEnum (RealCycC (3/2) :: Const Double) `shouldBe` fromEnum (3/2 :: Rational)
+        toRationalMaybe (CycC (3/2) :: Const (Complex Double)) `shouldBe` Just (3/2)
+        toIntegerMaybe (CycC 2 :: Const (Complex Double)) `shouldBe` Just 2
+      it "rejects nonrational exact cyclotomic constants" $ do
+        toRationalMaybe (sqrt (IntegerC 2) :: Const Double) `shouldBe` Nothing
+        toIntegerMaybe (sqrt (IntegerC (-1)) :: Const (Complex Double)) `shouldBe` Nothing
+#endif
     describe "Square root domains" $ do
       describe "Exact Float squares" $ integerSqrtTests (Proxy :: Proxy Float)
       describe "Exact Double squares" $ integerSqrtTests (Proxy :: Proxy Double)
