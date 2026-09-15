@@ -192,8 +192,10 @@ data Exp a where
     DiffE       :: (Floating a, Floating (Const a)) => Exp a -> Var -> Exp a
     -- | An indefinite or definite integral with respect to a variable.
     --
-    -- 'Nothing' represents an indefinite integral. @'Just' (lower, upper)@
-    -- represents a definite integral.
+    -- 'Nothing' represents an indefinite antiderivative that can depend on
+    -- its integration variable, even when the integrand is constant.
+    -- @'Just' (lower, upper)@ represents a definite integral whose variable
+    -- binds occurrences in the integrand, but not in either bound.
     IntE        :: (Floating a, Floating (Const a)) => Maybe (Exp a, Exp a) -> Exp a -> Var -> Exp a
 
 -- | Compare expression syntax for rewrite bookkeeping. Compare every

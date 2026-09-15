@@ -112,9 +112,14 @@ unfactorize :: forall a . (Eq a, Floating a, Floating (Const a), IsConst a)
             -> Exp a
 unfactorize factors = product [e**ConstE n | (e, n) <- factors]
 
--- | Collect variables occurring in expression operands and integral bounds.
--- The variable fields of 'DiffE' and 'IntE' do not bind or add variables in
--- this traversal.
+-- | Collect the expression's syntactic free-variable dependencies.
+-- A definite integral binds its variable in the integrand, but not in either
+-- bound. An indefinite integral retains its integration variable, even when
+-- its integrand is constant. Differentiation propagates the operand's
+-- dependencies without binding or adding its differentiation variable.
+--
+-- This is conservative dependency analysis without algebraic simplification.
+-- Inclusion in the result does not prove that the value depends on a variable.
 fvs :: Exp a -> Set Var
 fvs Undefined{}              = mempty
 fvs Infty{}                  = mempty
@@ -132,10 +137,11 @@ fvs (IntBinopE _ e1 e2)      = fvs e1 <> fvs e2
 fvs (FracBinopE _ e1 e2)     = fvs e1 <> fvs e2
 fvs (FloatBinopE _ e1 e2)    = fvs e1 <> fvs e2
 fvs (DiffE e _)              = fvs e
-fvs (IntE Nothing e _)       = fvs e
-fvs (IntE (Just (l, u)) e _) = fvs l <> fvs u <> fvs e
+fvs (IntE Nothing e v)       = Set.insert v (fvs e)
+fvs (IntE (Just (l, u)) e v) = fvs l <> fvs u <> Set.delete v (fvs e)
 
--- | Test whether a variable is absent from the occurrences collected by 'fvs'.
+-- | Return 'True' if the variable is absent from the dependencies reported by
+-- 'fvs'. A 'False' result does not establish actual dependence.
 freeOf :: Var -> Exp a -> Bool
 freeOf v e = v `Set.notMember` fvs e
 

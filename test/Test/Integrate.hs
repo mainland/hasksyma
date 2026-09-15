@@ -11,6 +11,7 @@ module Test.Integrate where
 
 import           Control.Monad      (forM_)
 import           Data.Complex       (Complex (..), magnitude)
+import qualified Data.Set           as Set
 import           Test.Hspec         (Spec, describe, it)
 import           Test.HUnit         (Assertion, assertBool, assertFailure, (@?=))
 
@@ -40,6 +41,7 @@ integrate e0 | e1 == e0  = e0
 
 integrateTests :: Spec
 integrateTests = do
+  integralDependencyTests
   describe "Factorization" $ do
     it "extracts a positive sign from an even power of a negated factor" $
       factorize ((-x) ^ (2 :: Integer) :: Exp Double) @?= [(x, 2)]
@@ -136,6 +138,41 @@ integrateTests = do
 
     y :: Exp a
     y = VarE "y"
+
+integralDependencyTests :: Spec
+integralDependencyTests = describe "Integral dependencies" $ do
+    forM_ [("binds the definite integration variable", definite, []),
+           ("retains free integrand parameters", IntE (Just (0, 1)) (NumBinopE Mul x y) "x", ["y"]),
+           ("retains free variables from both bounds", IntE (Just (y, z)) x "x", ["y", "z"]),
+           ("does not bind its variable in the lower bound", IntE (Just (x, 1)) x "x", ["x"]),
+           ("does not bind its variable in the upper bound", IntE (Just (0, x)) x "x", ["x"]),
+           ("retains the variable of a constant antiderivative", antiderivative, ["x"]),
+           ("retains antiderivative parameters", IntE Nothing y "x", ["x", "y"]),
+           ("conservatively retains the variable of a zero antiderivative", IntE Nothing 0 "x", ["x"]),
+           ("binds dependencies introduced by a nested antiderivative", IntE (Just (0, 1)) antiderivative "x", []),
+           ("retains the outer variable around a closed definite integral", IntE Nothing definite "x", ["x"]),
+           ("respects nested definite integrals with the same variable", IntE (Just (0, 1)) (IntE (Just (0, x)) x "x") "x", []),
+           ("retains antiderivative dependencies under differentiation", DiffE antiderivative "x", ["x"])] $
+      \(name, e, expected) -> it name $ fvs e @?= Set.fromList expected
+    it "does not treat an antiderivative as a constant when integrating it again" $ do
+      freeOf "x" antiderivative @?= False
+      (heuristicIntegrate antiderivative "x" :: Maybe (Exp Double)) @?= Nothing
+    it "recognizes a closed definite integral as a constant factor" $ do
+      freeOf "x" definite @?= True
+      (heuristicIntegrate definite "x" :: Maybe (Exp Double)) @?= Just (definite * x)
+    it "does not treat a definite integral with a variable bound as constant" $
+      freeOf "x" (IntE (Just (0, x)) x "x") @?= False
+    it "still integrates nested constant integrals after reducing the inner integral" $
+      simplify (integrate (IntE Nothing antiderivative "x")) @?=
+        simplify (FracBinopE FDiv (NatPowE x 2) 2)
+  where
+    x, y, z :: Exp Double
+    x = VarE "x"
+    y = VarE "y"
+    z = VarE "z"
+
+    definite = IntE (Just (0, 1)) x "x"
+    antiderivative = IntE Nothing 1 "x"
 
 realPowerForms :: [(String, Exp Double -> Rational -> Exp Double)]
 realPowerForms =
