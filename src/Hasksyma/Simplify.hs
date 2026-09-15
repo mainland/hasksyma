@@ -461,10 +461,10 @@ simp (FracBinopE FDiv (pow -> Just p1) (pow -> Just p2))
 simp (pow -> Just p) = go p
   where
     go :: Pow a -> Exp a
+    -- Integral powers use the empty-product convention, including 0^0 = 1.
     go (NatPow x n)
-      | x == 0 && n == 0 = Undefined
-      | n == 0           = 1
-      | n == 1           = x
+      | n == 0 = 1
+      | n == 1 = x
 
     go (NatPow e@(pow -> Just p1) n) =
         case p1 of
@@ -479,10 +479,9 @@ simp (pow -> Just p) = go p
         liftNatPow x n
 
     go (IntPow x n)
-      | x == 0 && n == 0 = Undefined
-      | n == 0           = 1
-      | n == 1           = x
-      | n >= 0           = NatPowE x (fromInteger n)
+      | n == 0 = 1
+      | n == 1 = x
+      | n >= 0 = NatPowE x (fromInteger n)
 
     go (IntPow e@(pow -> Just p1) n) =
         case p1 of

@@ -172,9 +172,11 @@ data Exp a where
     -- | A binary operation from 'Num'.
     NumBinopE   :: Num a => NumBinop -> Exp a -> Exp a -> Exp a
     -- | Exponentiation by a nonnegative exponent in a 'Num' expression.
+    -- Follow integral exponentiation's empty-product convention: @0^0 = 1@.
     -- Use 'IntPowE' when the exponent may be negative.
     NatPowE     :: Num a => Exp a -> Natural -> Exp a
     -- | Exponentiation by a signed integral exponent.
+    -- As with 'NatPowE', @0^0 = 1@.
     IntPowE     :: Fractional a => Exp a -> Integer -> Exp a
     -- | Exponentiation by an exact rational exponent, interpreted using
     -- @(**)@. This retains the underlying type's behavior for negative and
@@ -423,12 +425,13 @@ liftFloating2 op (ConstE x) (ConstE y) | isExact z = ConstE z
 liftFloating2 op e1 e2 = FloatBinopE op e1 e2
 
 -- | Lift raising a number to a nonnegative integral power to an @t'Exp' a@,
--- reducing constants when possible while preserving exactness.
+-- reducing constants when possible while preserving exactness. A constant
+-- raised to zero reduces to exact one, including a zero base.
 liftNatPow :: (IsConst a, Num a, Eq a)
            => Exp a
            -> Natural
            -> Exp a
-liftNatPow (ConstE x) n | (x /= 0 || n /= 0) && isExact z = ConstE z
+liftNatPow (ConstE x) n | isExact z = ConstE z
   where
     z = x ^ n
 
@@ -436,11 +439,13 @@ liftNatPow e n = NatPowE e n
 
 -- | Lift operation of raising a number to an integral power to an
 -- @t'Exp' a@, reducing constants when possible while preserving exactness.
+-- A constant raised to zero reduces to exact one, including a zero base.
+-- Negative powers of a known zero base remain unreduced.
 liftIntPow :: (IsConst a, Fractional a, Eq a)
            => Exp a
            -> Integer
            -> Exp a
-liftIntPow (ConstE x) n | (x /= 0 || n > 0) && isExact z = ConstE z
+liftIntPow (ConstE x) n | (x /= 0 || n >= 0) && isExact z = ConstE z
   where
     z = x ^^ n
 

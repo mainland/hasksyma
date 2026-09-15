@@ -52,6 +52,7 @@ simplifyTests = describe "Simplification" $ do
     logDomainTests
     logInverseTests
     generalPowerDomainTests
+    zeroPowerTests
     fixExpTests
     norvigTests
     prodTests
@@ -92,6 +93,28 @@ identityTests = describe "Expression identity" $ do
       sameExp (IntE Nothing nan "x") (IntE Nothing nan "x") @?= True
       sameExp (IntE Nothing nan "x") (IntE Nothing 1 "x") @?= False
       sameExp (DiffE nan "x") (DiffE nan "y") @?= False
+
+zeroPowerTests :: Spec
+zeroPowerTests = describe "Integral zero powers" $ do
+    forM_ [("natural", (`NatPowE` 0)), ("signed", (`IntPowE` 0))] $ \(name, power) ->
+      forM_ [("eval", eval), ("evalexact", evalexact), ("simplify", simplify), ("simplify'", simplify')] $
+        \(operation, transform) ->
+          it (operation ++ " returns exact one for " ++ name ++ " zero to the zero power") $
+            forM_ [IntegerC 0, RationalC 0, Const 0, Const (-0.0)] $ \c ->
+              sameExp (transform (power (ConstE c)) :: Exp Double) (ConstE (IntegerC 1)) @?= True
+    it "uses the same convention with exact rational payloads" $
+      forM_ [NatPowE 0 0, IntPowE 0 0] $ \e -> do
+        sameExp (eval e :: Exp Rational) (ConstE (IntegerC 1)) @?= True
+        sameExp (evalexact e) (ConstE (IntegerC 1)) @?= True
+        sameExp (simplify e) (ConstE (IntegerC 1)) @?= True
+    it "uses the same integral-power convention with complex payloads" $
+      forM_ [NatPowE 0 0, IntPowE 0 0] $ \e -> do
+        sameExp (eval e :: Exp (Complex Double)) (ConstE (IntegerC 1)) @?= True
+        sameExp (evalexact e) (ConstE (IntegerC 1)) @?= True
+        sameExp (simplify e) (ConstE (IntegerC 1)) @?= True
+    it "still leaves a negative power of exact zero unreduced during exact evaluation" $
+      let e = IntPowE 0 (-1) :: Exp Rational
+      in sameExp (evalexact e) e @?= True
 
 generalPowerDomainTests :: Spec
 generalPowerDomainTests = describe "General power domains" $ do
