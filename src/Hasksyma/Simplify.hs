@@ -16,6 +16,9 @@ module Hasksyma.Simplify
   ( simplify,
     simplify',
     simplifyn,
+    simplifyWithLimit,
+    RewriteResult (..),
+    rewriteWithLimit,
     mapExp,
     fixExp,
     simp,
@@ -28,9 +31,12 @@ import           Hasksyma.Const  (Const (..), IsConst, isExact)
 import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), FracBinop (..),
                                   FracUnop (..), NumBinop (..), NumUnop (..), liftFloating,
                                   liftFloating2, liftFracPow, liftFractional, liftFractional2,
-                                  liftIntPow, liftIntegral2, liftNatPow, liftNum, liftNum2)
+                                  liftIntPow, liftIntegral2, liftNatPow, liftNum, liftNum2, sameExp)
 
 -- | Fully simplify an expression.
+-- Iterate full bottom-up passes until 'sameExp' detects unchanged syntax.
+-- There is no rewrite budget. Use 'simplifyWithLimit' to detect cycles or
+-- stop after a bounded number of passes.
 --
 -- >>> :set -XOverloadedStrings
 -- >>> import Hasksyma.Exp (Exp (..), NumBinop (..))
@@ -38,22 +44,61 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 -- >>> simplify (NumBinopE Add x 0) == x
 -- True
 simplify :: (Eq a, Num a, IsConst a) => Exp a -> Exp a
-simplify e | e' == e   = e
-           | otherwise = simplify e'
+simplify e | sameExp e' e = e
+           | otherwise    = simplify e'
   where
     e' = mapExp simp e
 
--- | Fully simplify an expression.
+-- | Simplify by reaching a local fixed point at each non-leaf node through
+-- 'fixExp'. Like 'simplify', this has no cycle or rewrite limit.
 simplify' :: (Eq a, Num a, IsConst a) => Exp a -> Exp a
 simplify' = fixExp simp
 
--- | Perform @n@ simplifcation steps on an expression.
+-- | Perform at most @n@ full simplification passes. A nonpositive budget
+-- returns the input without rewriting. Stop at a fixed point or detected cycle,
+-- discarding the completion status. Use 'simplifyWithLimit' when the
+-- distinction between completion and an unfinished result matters.
 simplifyn :: (Eq a, Num a, IsConst a) => Int -> Exp a -> Exp a
-simplifyn 0 e             = e
-simplifyn n e | e' == e   = e
-              | otherwise = simplifyn (n-1) e'
+simplifyn n e = case simplifyWithLimit n e of
+                  FixedPoint result       -> result
+                  CycleDetected result    -> result
+                  StepLimitReached result -> result
+
+-- | The outcome of bounded rewriting. A fixed point means the supplied step
+-- leaves syntax unchanged according to 'sameExp', not that an expression has a
+-- mathematically canonical form.
+data RewriteResult a
+    = FixedPoint (Exp a)       -- ^ The last step left syntax unchanged.
+    | CycleDetected (Exp a)    -- ^ A nontrivial cycle returned to this expression.
+    | StepLimitReached (Exp a) -- ^ The budget ran out before establishing completion.
+    deriving (Show)
+
+-- | Apply a whole-expression rewrite step at most @n@ times, checking syntax
+-- with 'sameExp'. A nonpositive budget returns 'StepLimitReached' with the
+-- unchanged input and does not call the step. Detect fixed points and cycles
+-- after each step, including the last permitted step.
+--
+-- Retain visited expressions for cycle detection within this budget. Each
+-- step and identity comparison must itself terminate on finite expressions.
+-- This is a step limit, not a time or expression-size limit. Custom payload
+-- identity may fail to recognize a cycle, but the step budget still applies.
+rewriteWithLimit :: (Eq a, IsConst a)
+                 => Int -> (Exp a -> Exp a) -> Exp a -> RewriteResult a
+rewriteWithLimit limit step = go limit []
   where
-    e' = mapExp simp e
+    go n _ e | n <= 0 = StepLimitReached e
+    go n seen e
+      | sameExp next e          = FixedPoint next
+      | any (sameExp next) seen = CycleDetected next
+      | otherwise               = go (n-1) (e:seen) next
+      where
+        next = step e
+
+-- | Simplify with at most @n@ full bottom-up passes, reporting whether
+-- rewriting reached a fixed point, found a cycle, or exhausted its budget.
+-- The step and memory limitations of 'rewriteWithLimit' apply.
+simplifyWithLimit :: (Eq a, Num a, IsConst a) => Int -> Exp a -> RewriteResult a
+simplifyWithLimit n = rewriteWithLimit n (mapExp simp)
 
 -- | Recursively apply a function to an expression and its sub-expressions.
 mapExp :: (Eq a, IsConst a) => (Exp a -> Exp a) -> Exp a -> Exp a
@@ -77,7 +122,9 @@ mapExp f (IntE Nothing x v)       = f (IntE Nothing (mapExp f x) v)
 mapExp f (IntE (Just (l, u)) x v) = f (IntE (Just (mapExp f l, mapExp f u)) (mapExp f x) v)
 
 -- | Recursively apply a function to an expression and its sub-expressions until
--- reaching a fixed point.
+-- reaching a local fixed point under 'sameExp'. Leaf nodes are returned
+-- unchanged. This unbounded traversal can diverge for cycling rules. For
+-- bounded whole-expression steps use 'rewriteWithLimit'.
 fixExp :: (Eq a, IsConst a) => (Exp a -> Exp a) -> Exp a -> Exp a
 fixExp _ e@Undefined{} = e
 fixExp _ e@Infty{}     = e
@@ -85,102 +132,26 @@ fixExp _ e@NegInfty{}  = e
 fixExp _ e@ConstE{}    = e
 fixExp _ e@VarE{}      = e
 
-fixExp f e@(NumUnopE op x)
-    | e' == e   = e
-    | otherwise = fixExp f e'
+fixExp f e
+    | sameExp e' e = e
+    | otherwise   = fixExp f e'
   where
-    x' = fixExp f x
-    e' = f (NumUnopE op x')
+    e' = step e
 
-fixExp f e@(FracUnopE op x)
-    | e' == e   = e
-    | otherwise = fixExp f e'
-  where
-    x' = fixExp f x
-    e' = f (FracUnopE op x')
-
-fixExp f e@(FloatUnopE op x)
-    | e' == e   = e
-    | otherwise = fixExp f e'
-  where
-    x' = fixExp f x
-    e' = f (FloatUnopE op x')
-
-fixExp f e@(NumBinopE op x y)
-    | e' == e   = e
-    | otherwise = fixExp f e'
-  where
-    x' = fixExp f x
-    y' = fixExp f y
-    e' = f (NumBinopE op x' y')
-
-fixExp f e@(NatPowE x n)
-    | e' == e   = e
-    | otherwise = fixExp f e'
-  where
-    x' = fixExp f x
-    e' = f (NatPowE x' n)
-
-fixExp f e@(IntPowE x n)
-    | e' == e   = e
-    | otherwise = fixExp f e'
-  where
-    x' = fixExp f x
-    e' = f (IntPowE x' n)
-
-fixExp f e@(FracPowE x q)
-    | e' == e   = e
-    | otherwise = fixExp f e'
-  where
-    x' = fixExp f x
-    e' = f (FracPowE x' q)
-
-fixExp f e@(IntBinopE op x y)
-    | e' == e   = e
-    | otherwise = fixExp f e'
-  where
-    x' = fixExp f x
-    y' = fixExp f y
-    e' = f (IntBinopE op x' y')
-
-fixExp f e@(FracBinopE op x y)
-    | e' == e   = e
-    | otherwise = fixExp f e'
-  where
-    x' = fixExp f x
-    y' = fixExp f y
-    e' = f (FracBinopE op x' y')
-
-fixExp f e@(FloatBinopE op x y)
-    | e' == e   = e
-    | otherwise = fixExp f e'
-  where
-    x' = fixExp f x
-    y' = fixExp f y
-    e' = f (FloatBinopE op x' y')
-
-fixExp f e@(DiffE x v)
-    | e' == e   = e
-    | otherwise = fixExp f e'
-  where
-    x' = fixExp f x
-    e' = f (DiffE x' v)
-
-fixExp f e@(IntE Nothing x v)
-    | e' == e   = e
-    | otherwise = fixExp f e'
-  where
-    x' = fixExp f x
-    e' = f (IntE Nothing x' v)
-
-fixExp f e@(IntE (Just (l, u)) x v)
-    | e' == e   = e
-    | otherwise = fixExp f e'
-  where
-    l' = fixExp f l
-    u' = fixExp f u
-    x' = fixExp f x
-    e' = f (IntE (Just (l', u')) x' v)
+    step (NumUnopE op x)          = f (NumUnopE op (fixExp f x))
+    step (FracUnopE op x)         = f (FracUnopE op (fixExp f x))
+    step (FloatUnopE op x)        = f (FloatUnopE op (fixExp f x))
+    step (NumBinopE op x y)       = f (NumBinopE op (fixExp f x) (fixExp f y))
+    step (NatPowE x n)            = f (NatPowE (fixExp f x) n)
+    step (IntPowE x n)            = f (IntPowE (fixExp f x) n)
+    step (FracPowE x q)           = f (FracPowE (fixExp f x) q)
+    step (IntBinopE op x y)       = f (IntBinopE op (fixExp f x) (fixExp f y))
+    step (FracBinopE op x y)      = f (FracBinopE op (fixExp f x) (fixExp f y))
+    step (FloatBinopE op x y)     = f (FloatBinopE op (fixExp f x) (fixExp f y))
+    step (DiffE x v)              = f (DiffE (fixExp f x) v)
+    step (IntE Nothing x v)       = f (IntE Nothing (fixExp f x) v)
+    step (IntE (Just (l, u)) x v) = f (IntE (Just (fixExp f l, fixExp f u)) (fixExp f x) v)
+    step leaf                     = leaf
 
 -- | An expression consisting of exponentiation.
 data Pow a where
