@@ -43,6 +43,33 @@ integrateTests :: Spec
 integrateTests = do
   integralDependencyTests
   describe "Factorization" $ do
+    describe "Factor division" $ do
+      it "retains denominator factors when the numerator represents one" $
+        divideFactors [] [(x, 1)] @?= [(x, -1 :: Const Double)]
+      it "retains every factor of an inverse product" $
+        divideFactors [] [(x, 2), (y, 3)] @?= [(x, -2 :: Const Double), (y, -3)]
+      it "combines repeated denominator factors" $
+        divideFactors [] [(x, 1), (x, 2)] @?= [(x, -3 :: Const Double)]
+      it "inverts negative denominator exponents" $
+        divideFactors [] [(x, -2)] @?= [(x, 2 :: Const Double)]
+      it "removes zero exponents without dropping other denominator factors" $
+        divideFactors [] [(x, 0), (y, 2)] @?= [(y, -2 :: Const Double)]
+      it "preserves exact rational exponents" $
+        case divideFactors [] [(x, RationalC (1/2) :: Const Double)] of
+          [(base, power)] -> do
+            base @?= x
+            sameConst power (RationalC (-1/2)) @?= True
+          result -> assertFailure $ show result
+      it "continues through the denominator after cancelling a numerator factor" $
+        divideFactors [(x, 2)] [(x, 2), (y, 1)] @?= [(y, -1 :: Const Double)]
+      it "preserves a numerator divided by one" $
+        divideFactors [(x, 2)] [] @?= [(x, 2 :: Const Double)]
+      it "returns the empty factorization for one divided by one" $
+        (divideFactors [] [] :: [(Exp Double, Const Double)]) @?= []
+      it "reconstructs the value of an inverse constant power" $
+        case eval (unfactorize (divideFactors [] [(2, 3)]) :: Exp Double) of
+          ConstE c -> fromConst c @?= 1/8
+          result   -> assertFailure $ show result
     it "extracts a positive sign from an even power of a negated factor" $
       factorize ((-x) ^ (2 :: Integer) :: Exp Double) @?= [(x, 2)]
     it "extracts a negative sign from an odd power of a negated factor" $

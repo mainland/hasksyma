@@ -226,7 +226,10 @@ derivDivides f@(FloatUnopE op u) n x fs | n == 1 && freeOf x k = do
 derivDivides _ _ _ _ = mzero
 
 -- | Form a heuristic quotient of factor lists by subtracting exponents.
--- Remove factors whose resulting exponent is zero.
+-- Factors found only in the denominator are inserted with negated exponents.
+-- Remove factors whose resulting exponent is zero. An empty factorization
+-- represents one, so an empty numerator still requires processing every
+-- denominator factor.
 divideFactors :: forall a . (Eq a, Floating a, Floating (Const a), IsConst a)
               => [(Exp a, Const a)] -- ^ Numerator factors
               -> [(Exp a, Const a)] -- ^ Denominator factors
@@ -236,7 +239,6 @@ divideFactors ns0 ds0 = [(e, n) | (e, n) <- go ns0 ds0, n /= 0]
     go :: [(Exp a, Const a)]
        -> [(Exp a, Const a)]
        -> [(Exp a, Const a)]
-    go [] _      = []
     go ns  []    = ns
     go ns (d:ds) = go (div1 ns d) ds
 
