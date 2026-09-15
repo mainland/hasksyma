@@ -64,6 +64,13 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 -- also requires an explicitly nonzero exact base. Otherwise the inner
 -- reciprocal remains present, even if the combined exponent is positive.
 --
+-- Derivative rules give local formulas where the source expression and its
+-- required derivatives are defined. They reduce child derivatives before
+-- assembling product terms and omit terms with a known zero derivative.
+-- Simplification can extend the derivative formula's domain, including when
+-- its source contains a zero product. No derivative domain is returned or
+-- certified.
+--
 -- Differentiating @log (abs u)@ retains the unresolved derivative of @abs u@.
 -- The shortcut @u'/u@ requires nonzero real arguments and is invalid for general
 -- complex values. This interface does not carry that domain evidence.
@@ -347,7 +354,8 @@ isNonzeroExactConstant (ConstE (Pi q))        = q /= 0
 isNonzeroExactConstant (ConstE E)             = True
 isNonzeroExactConstant _                      = False
 
--- | One-step expression simplification.
+-- | One-step expression simplification. Derivative rules reduce child
+-- derivatives when assembling product terms, as described in 'simplify'.
 simp :: forall a . (Eq a, Num a, IsConst a) => Exp a -> Exp a
 -- Keep nested inverses unless the base is known nonzero: cancelling
 -- recip (recip 0) would erase the inner singularity. This is a
@@ -624,37 +632,46 @@ simp (DiffE (VarE x) x')
     | otherwise = 0
 
 simp (DiffE (NumUnopE Neg u) x) =
-    negate $ DiffE u x
+    mapExp simp $ negate (DiffE u x)
 
 simp (DiffE (NumBinopE Add u v) x) =
-    DiffE u x + DiffE v x
+    mapExp simp $ DiffE u x + DiffE v x
 
 simp (DiffE (NumBinopE Sub u v) x) =
-    DiffE u x - DiffE v x
+    mapExp simp $ DiffE u x - DiffE v x
 
 simp (DiffE (NumBinopE Mul u v) x) =
-    u * DiffE v x + v * DiffE u x
+    simp $ NumBinopE Add (derivativeTerm u (DiffE v x)) (derivativeTerm v (DiffE u x))
 
 simp (DiffE (FracBinopE FDiv u v) x) =
-    (v * DiffE u x - u * DiffE v x) / v ^ (2 :: Integer)
+    (derivativeTerm v (DiffE u x) - derivativeTerm u (DiffE v x)) / v ^ (2 :: Integer)
 
 simp (DiffE (NatPowE _ 0) _) = 0
 
 -- The preceding zero case ensures the decremented exponent is nonnegative.
 simp (DiffE (NatPowE u n) x) =
-    fromIntegral n * NatPowE u (fromInteger (toInteger n-1)) * DiffE u x
+    derivativeTerm (fromIntegral n * NatPowE u (fromInteger (toInteger n-1))) (DiffE u x)
+
+simp (DiffE (IntPowE _ 0) _) = 0
 
 simp (DiffE (IntPowE u n) x) =
-    fromIntegral n * u ^^ (n-1) * DiffE u x
+    derivativeTerm (fromIntegral n * u ^^ (n-1)) (DiffE u x)
+
+simp (DiffE (FracPowE _ 0) _) = 0
 
 simp (DiffE (FracPowE u q) x) =
-    fromRational q * FracPowE u (q-1) * DiffE u x
+    derivativeTerm (fromRational q * FracPowE u (q-1)) (DiffE u x)
+
+simp (DiffE (FloatBinopE Pow _ (ConstE (IntegerC 0))) _) = 0
+
+simp (DiffE (FloatBinopE Pow _ (ConstE (RationalC 0))) _) = 0
 
 simp (DiffE (FloatBinopE Pow u v) x) =
-    v * u ** (v-1) * DiffE u x + u ** v * log u * DiffE v x
+    simp $ NumBinopE Add (derivativeTerm (v * u ** (v-1)) (DiffE u x))
+                        (derivativeTerm (u ** v * log u) (DiffE v x))
 
 simp (DiffE (FloatUnopE Exp u) x) =
-    FloatUnopE Exp u * DiffE u x
+    derivativeTerm (FloatUnopE Exp u) (DiffE u x)
 
 -- Do not special-case log(abs u) as u'/u without real, nonzero u.
 -- As a function of complex z, log(abs z) is not holomorphic. Retain
@@ -663,16 +680,16 @@ simp (DiffE (FloatUnopE Log u) x) =
     DiffE u x / u
 
 simp (DiffE (FloatUnopE Sin u) x) =
-    cos u * DiffE u x
+    derivativeTerm (cos u) (DiffE u x)
 
 simp (DiffE (FloatUnopE Cos u) x) =
-    - (sin u) * DiffE u x
+    derivativeTerm (-(sin u)) (DiffE u x)
 
 simp (DiffE (FloatUnopE Sinh u) x) =
-    cosh u * DiffE u x
+    derivativeTerm (cosh u) (DiffE u x)
 
 simp (DiffE (FloatUnopE Cosh u) x) =
-    sinh u * DiffE u x
+    derivativeTerm (sinh u) (DiffE u x)
 
 -- Fall-through rules. These will combine constants when possible.
 simp (NumUnopE op x)      = liftNum op x
@@ -687,6 +704,18 @@ simp (FloatBinopE op x y) = liftFloating2 op x y
 simp (FracBinopE op x y)  = liftFractional2 op x y
 
 simp e = e
+
+-- Derivative formulas apply locally where the source and its required
+-- derivatives are defined. Omit a term with a known zero derivative in this
+-- context before constructing potentially branch-sensitive coefficients. The
+-- child derivative is reduced before the coefficient is needed. Use a single
+-- bottom-up pass, not an unbounded fixed-point loop inside a rewrite step.
+derivativeTerm :: (Eq a, Num a, IsConst a) => Exp a -> Exp a -> Exp a
+derivativeTerm coefficient derivative
+    | d == 0   = 0
+    | otherwise = coefficient * d
+  where
+    d = mapExp simp derivative
 
 -- | Multiply exponents with equal bases
 mulPowers :: (Eq a, IsConst a) => Pow a -> Pow a -> Exp a

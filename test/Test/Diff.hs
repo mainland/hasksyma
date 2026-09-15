@@ -14,14 +14,34 @@ import           Data.Complex      (Complex (..))
 import           Test.Hspec        (Spec, describe, it)
 import           Test.HUnit        ((@?=))
 
-import           Hasksyma.Const    (Const (RationalC))
+import           Hasksyma.Const    (Const (..), IsConst (fromConst))
 import           Hasksyma.Diff     (diff)
-import           Hasksyma.Exp      (Exp (ConstE, DiffE, FracBinopE, FracPowE, IntPowE, NatPowE, NumBinopE, VarE),
-                                    FracBinop (FDiv), NumBinop (Mul), sameExp)
-import           Hasksyma.Simplify (simp, simplify, simplify')
+import           Hasksyma.Eval     (eval)
+import           Hasksyma.Exp      (Exp (ConstE, DiffE, FloatBinopE, FracBinopE, FracPowE, IntPowE, NatPowE, NumBinopE, VarE),
+                                    FloatBinop (Pow), FracBinop (FDiv), NumBinop (Mul), sameExp)
+import           Hasksyma.Simplify (mapExp, simp, simplify, simplify')
 
 diffTests :: Spec
 diffTests = describe "Differentiation" $ do
+    describe "Zero derivative terms" $ do
+      forM_ [("natural", (`NatPowE` 0)), ("integer", (`IntPowE` 0)),
+             ("rational", (`FracPowE` 0)),
+             ("general integer", \u -> FloatBinopE Pow u (ConstE (IntegerC 0))),
+             ("general rational", \u -> FloatBinopE Pow u (ConstE (RationalC 0)))] $ \(name, power) ->
+        it ("differentiates " ++ name ++ " zero powers without introducing a reciprocal") $
+          simp (diff (power x) x :: Exp Double) @?= 0
+      it "omits the constant exponent's logarithmic term at a negative real base" $
+        valueAt (-2) (simplify (diff (FloatBinopE Pow x y) x)) @?= 12
+      it "omits a zero inner derivative in the chain rule" $
+        simplify (diff (sin y) x :: Exp Double) @?= 0
+      it "removes zero derivative summands before a surrounding product distributes" $
+        forM_ [(2*y, 2*x), (2+y, x), (y-2, x)] $ \(u, expected) ->
+          simplify (x * diff u y :: Exp Double) @?= expected
+      it "allows domain extension when simplifying a zero product's derivative" $
+        let derivative = simplify (diff (NumBinopE Mul 0 (IntPowE x (-1))) x)
+        in sameExp derivative (0 :: Exp Double) @?= True
+      it "retains the reciprocal derivative with a constant numerator" $
+        valueAt 2 (simplify (diff (FracBinopE FDiv 1 x) x)) @?= -1/4
     describe "Logarithmic absolute values" $ do
       forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
         it (name ++ " retains the unresolved complex absolute-value derivative") $
@@ -66,6 +86,15 @@ diffTests = describe "Differentiation" $ do
     it "sin (x + x) * sin (diff (x^2) x) + cos(2*x) * cos(x * diff (2*y) y) = 1" $
         simplify (sin (x + x) * sin (diff (x^(2 :: Integer)) x) + cos(2*x) * cos(x * diff (2*y) y) :: Exp Double) @?= 1
   where
+    valueAt :: Double -> Exp Double -> Double
+    valueAt point e = case eval (mapExp replace e) of
+                       ConstE constant -> fromConst constant
+                       result          -> error (show result)
+      where
+        replace (VarE "x") = ConstE (Const point)
+        replace (VarE "y") = 3
+        replace other      = other
+
     a,b,c, x, y :: Exp a
     a = VarE "a"
     b = VarE "b"
