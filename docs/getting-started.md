@@ -155,6 +155,12 @@ cancelling `x/x` produces one while retaining `nonZero x` as its source domain.
 The same exclusion remains when reducing `0 * recip x` to zero. Extracting
 `value` alone loses that restriction.
 
+Checked simplification also reduces `sin(u)^2 + cos(u)^2` to one in either
+term order, with squares represented by `NatPowE` or `IntPowE`. The arguments
+must match structurally. If `u` is `recip x`, the result retains `nonZero x`
+as its source domain. This is a mathematical real identity and does not promise
+identical floating-point evaluation.
+
 The budget counts individual rewrites across the tree. Traversal visits children
 before their parents and left children before right children. `completion`
 reports whether an implemented rule remains applicable. Use `continueChecked`

@@ -49,6 +49,66 @@ checkedSimplifyTests = describe "Checked simplification" $ do
       expectNonZeroX (sourceDomain result)
       decision <- expectRight (decide (contextUsed result) (positive x))
       checkDecision (contextUsed result) (positive x) decision `shouldBe` True
+    describe "Checked trigonometric identity" $ do
+      it "handles both term orders and integral square encodings" $
+        forM_ [(`NatPowE` 2), (`IntPowE` 2)] $ \squareSin ->
+          forM_ [(`NatPowE` 2), (`IntPowE` 2)] $ \squareCos -> do
+            let s = squareSin (FloatUnopE Sin x)
+                c = squareCos (FloatUnopE Cos x)
+            forM_ [NumBinopE Add s c, NumBinopE Add c s] $ \source -> do
+              result <- expectRight (simplifyChecked 1 context source)
+              sameExp (value result) (ConstE (IntegerC 1)) `shouldBe` True
+              expectTrue (sourceDomain result)
+              expectTrue (obligations result)
+              checkSimplification source result `shouldBe` True
+      it "retains singularities in the shared argument" $ do
+        let inverse = FracUnopE Recip x
+            source = NumBinopE Add (NatPowE (FloatUnopE Sin inverse) 2)
+                                   (IntPowE (FloatUnopE Cos inverse) 2)
+        result <- expectRight (simplifyChecked 1 context source)
+        sameExp (value result) (ConstE (IntegerC 1)) `shouldBe` True
+        expectNonZeroX (sourceDomain result)
+        expectTrue (obligations result)
+        checkSimplification source result `shouldBe` True
+      it "replays the identity under a parent after simplifying its arguments" $ do
+        let quotient = FracBinopE FDiv x x
+            source = NumUnopE Neg (NumBinopE Add (NatPowE (FloatUnopE Sin quotient) 2)
+                                                (NatPowE (FloatUnopE Cos quotient) 2))
+        pending <- expectRight (simplifyChecked 2 context source)
+        completion pending `shouldBe` BudgetExhausted
+        checkSimplification source pending `shouldBe` True
+        result <- expectRight (continueChecked 1 pending)
+        sameExp (value result) (NumUnopE Neg (ConstE (IntegerC 1))) `shouldBe` True
+        expectNonZeroX (sourceDomain result)
+        completion result `shouldBe` NoApplicableRule
+        checkSimplification source result `shouldBe` True
+      it "leaves mismatched functions, arguments, and exponents unchanged" $ do
+        let sine = FloatUnopE Sin x
+            cosine = FloatUnopE Cos x
+        forM_ [NumBinopE Add (NatPowE sine 2) (NatPowE (FloatUnopE Cos y) 2),
+               NumBinopE Add (NatPowE sine 2) (NatPowE sine 2),
+               NumBinopE Add (NatPowE cosine 2) (NatPowE cosine 2),
+               NumBinopE Add (NatPowE sine 3) (IntPowE cosine 2),
+               NumBinopE Add (NatPowE sine 2) (IntPowE cosine (-2))] $ \source -> do
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) source `shouldBe` True
+          completion result `shouldBe` NoApplicableRule
+          checkSimplification source result `shouldBe` True
+      it "does not match an exact named constant with its floating approximation" $ do
+        let p = ConstE (Pi 1)
+            q = ConstE (RationalC (toRational (pi :: Double)))
+            source = NumBinopE Add (NatPowE (FloatUnopE Sin p) 2) (NatPowE (FloatUnopE Cos q) 2)
+        result <- expectRight (simplifyChecked 1 context source)
+        sameExp (value result) source `shouldBe` True
+        checkSimplification source result `shouldBe` True
+      it "rejects undefined arguments and unsupported power forms" $ do
+        let source = NumBinopE Add (NatPowE (FloatUnopE Sin Undefined) 2)
+                                   (NatPowE (FloatUnopE Cos Undefined) 2)
+        failure (simplifyChecked 1 context source) `shouldBe` Just EmptySourceDomain
+        let fractional = NumBinopE Add (FracPowE (FloatUnopE Sin x) 2)
+                                       (NatPowE (FloatUnopE Cos x) 2)
+        failure (simplifyChecked 1 context fractional)
+          `shouldBe` Just (ConditionFailure UnsupportedOperation)
     describe "Further root identities" $ do
       it "cancels opposite terms in either order without losing singularities" $ do
         let inverse = FracUnopE Recip x
@@ -333,4 +393,6 @@ certificateTests = describe "Public simplification certificates" $ do
       , (CancelOpposites, NumBinopE Add x (NumUnopE Neg x), zero)
       , (ZeroProduct, NumBinopE Mul zero x, zero)
       , (CancelReciprocals, FracUnopE Recip (FracUnopE Recip x), x)
+      , (PythagoreanIdentity, NumBinopE Add (NatPowE (FloatUnopE Sin x) 2)
+                                           (NatPowE (FloatUnopE Cos x) 2), one)
       ]

@@ -8,7 +8,9 @@
 --
 -- Mathematical simplification with retained source domains and replayable
 -- derivations. Rules cancel identical differences and quotients, opposite
--- terms, zero products, and nested reciprocals. Traverse supported children
+-- terms, zero products, and nested reciprocals, and reduce @sin(u)^2 + cos(u)^2@
+-- to one. The trigonometric rule accepts natural and integer square constructors
+-- in either term order and retains the domain of @u@. Traverse supported children
 -- before their parents, visiting left children before right children. Inputs
 -- must belong to the real fragment supported by 'domainOf'. No traversal crosses
 -- a calculus node or unsupported operation, and no legacy simplifier is called.
@@ -103,6 +105,7 @@ data Rule a
     | CancelOpposites           -- ^ @u+(-u) = 0@, in either term order.
     | ZeroProduct               -- ^ @0*u = 0@, in either factor order.
     | CancelReciprocals         -- ^ @recip (recip u) = u@ on the original domain.
+    | PythagoreanIdentity       -- ^ @sin(u)^2 + cos(u)^2 = 1@, in either term order.
     deriving (Show)
 
 -- | One edge in a path from the expression root to a local rewrite.
@@ -218,6 +221,7 @@ nextRule (FracBinopE FDiv x y)
     | sameExp x y = Just (CancelQuotient, ConstE (IntegerC 1))
 nextRule (NumBinopE Add x y)
     | opposites x y = Just (CancelOpposites, ConstE (IntegerC 0))
+    | trigIdentity x y = Just (PythagoreanIdentity, ConstE (IntegerC 1))
 nextRule (NumBinopE Mul x y)
     | isExactZero x || isExactZero y = Just (ZeroProduct, ConstE (IntegerC 0))
 nextRule (FracUnopE Recip (FracUnopE Recip x)) = Just (CancelReciprocals, x)
@@ -227,6 +231,19 @@ opposites :: (Eq a, IsConst a) => Exp a -> Exp a -> Bool
 opposites x (NumUnopE Neg y) | sameExp x y = True
 opposites (NumUnopE Neg x) y = sameExp x y
 opposites _ _ = False
+
+-- Only integral square syntax belongs to the supported interpretation. Match
+-- arguments structurally without approximating constants or evaluating trig.
+trigIdentity :: (Eq a, IsConst a) => Exp a -> Exp a -> Bool
+trigIdentity x y = case (squareBase x, squareBase y) of
+    (Just (FloatUnopE Sin u), Just (FloatUnopE Cos v)) -> sameExp u v
+    (Just (FloatUnopE Cos u), Just (FloatUnopE Sin v)) -> sameExp u v
+    _                                                  -> False
+
+squareBase :: Exp a -> Maybe (Exp a)
+squareBase (NatPowE x 2) = Just x
+squareBase (IntPowE x 2) = Just x
+squareBase _             = Nothing
 
 -- Recognize only exact zero forms in the supported fragment, without evaluating
 -- opaque payloads or deciding whether a compound expression is zero.
@@ -282,4 +299,6 @@ checkRule CancelOpposites (NumBinopE Add x y) after =
 checkRule ZeroProduct (NumBinopE Mul x y) after =
     (isExactZero x || isExactZero y) && sameExp after (ConstE (IntegerC 0))
 checkRule CancelReciprocals (FracUnopE Recip (FracUnopE Recip x)) after = sameExp after x
+checkRule PythagoreanIdentity (NumBinopE Add x y) after =
+    trigIdentity x y && sameExp after (ConstE (IntegerC 1))
 checkRule _ _ _ = False
