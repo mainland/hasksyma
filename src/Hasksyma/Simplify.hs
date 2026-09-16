@@ -83,6 +83,12 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 -- Expression construction and @evalexact@ still retain zero products with
 -- unknown factors and their possible domain failures.
 --
+-- Reducing @sin u ^ 2 + cos u ^ 2@ to one requires an explicit exact
+-- constant argument. Unknown arguments retain their possible singularities
+-- and nonfinite values, although their subexpressions can still simplify.
+-- This restriction does not guarantee identical floating-point evaluation
+-- for exact constants.
+--
 -- Derivative rules give local formulas where the source expression and its
 -- required derivatives are defined. They reduce child derivatives before
 -- assembling product terms and omit terms with a known zero derivative.
@@ -604,7 +610,12 @@ simp (FloatUnopE Cos (ConstE (Pi k)))
     | k == 1   = -1
     | k == 1/2 = 0
 
-simp (NumBinopE Add (NatPowE (FloatUnopE Sin x) 2) (NatPowE (FloatUnopE Cos x') 2)) | x' == x =
+-- The identity holds for finite real and complex arguments. Restrict it
+-- here to explicit exact constants so cancelling sin(1/x)^2 + cos(1/x)^2
+-- does not erase an unknown source singularity. This is a conservative
+-- policy, not a failure of the identity on its mathematical domain.
+simp (NumBinopE Add (NatPowE (FloatUnopE Sin x) 2) (NatPowE (FloatUnopE Cos x') 2))
+    | x' == x, ConstE c <- x, isExact c =
     1
 
 -- Do not combine logarithm sums or differences without branch conditions.

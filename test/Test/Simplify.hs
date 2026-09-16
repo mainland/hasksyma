@@ -57,6 +57,7 @@ simplifyTests = describe "Simplification" $ do
     zeroProductTests
     denominatorCancellationTests
     cancellationDomainTests
+    trigonometricDomainTests
     inverseDomainTests
     exactNegationTests
     oppositeTermTests
@@ -72,6 +73,53 @@ simplifyTests = describe "Simplification" $ do
 
     tensec :: Int
     tensec = 10 * 1000000
+
+trigonometricDomainTests :: Spec
+trigonometricDomainTests = describe "Cancellation in trigonometric identities" $ do
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) -> do
+      it (name ++ " preserves nonfinite variable arguments") $
+        forM_ [0/0, 1/0, -1/0] $ \payload ->
+          assertNaN (eval (at payload (transform (identity (VarE "x")))))
+      it (name ++ " preserves nonfinite constant arguments") $
+        forM_ [0/0, 1/0, -1/0] $ \payload ->
+          assertNaN (eval (transform (identity (ConstE (Const payload)))))
+      forM_ [("reciprocal", FracUnopE Recip (VarE "x")),
+             ("logarithm", FloatUnopE Log (VarE "x"))] $ \(form, argument) ->
+        it (name ++ " retains the " ++ form ++ " argument's zero failure") $ do
+          let e = identity argument
+          assertNaN (eval (at 0 e))
+          assertNaN (eval (at 0 (transform e)))
+          assertBool (show e) (abs (value (at 2 (transform e)) - 1) < 1e-12)
+      it (name ++ " retains explicit exceptional arguments") $
+        forM_ [Undefined, Infty, NegInfty] $ \argument ->
+          let e = identity argument :: Exp Double
+          in sameExp (transform e) e @?= True
+      it (name ++ " still reduces identities at exact constant arguments") $
+        forM_ [IntegerC 1, RationalC (1/3), Pi 1, E] $ \argument ->
+          transform (identity (ConstE argument) :: Exp Double) @?= 1
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) -> do
+      it (name ++ " retains complex reciprocal failures") $ do
+        let e = transform (identity (FracUnopE Recip (VarE "x"))) :: Exp (Complex Double)
+        assertBool (show e) (isNaN (magnitude (value (at 0 e))))
+        assertBool (show e) (magnitude (value (at (1 :+ 1) e) - 1) < 1e-12)
+      it (name ++ " still reduces identities at complex exact arguments") $
+        transform (identity (ConstE E) :: Exp (Complex Double)) @?= 1
+  where
+    identity :: (Floating a, Floating (Const a), IsConst a, Eq a) => Exp a -> Exp a
+    identity argument = NumBinopE Add (NatPowE (sin argument) 2) (NatPowE (cos argument) 2)
+
+    at :: (Eq a, Num a, IsConst a) => a -> Exp a -> Exp a
+    at payload = mapExp $ \e -> case e of
+                                 VarE "x" -> ConstE (Const payload)
+                                 _        -> e
+
+    value :: (Eq a, IsConst a) => Exp a -> a
+    value e = case eval e of
+                ConstE c -> fromConst c
+                _        -> error "Expected a constant after evaluation"
+
+    assertNaN :: Exp Double -> Assertion
+    assertNaN e = assertBool (show e) (isNaN (value e))
 
 zeroProductTests :: Spec
 zeroProductTests = describe "Zero products" $ do
@@ -887,8 +935,9 @@ powTests =
         it "Terminates when ordering rational powers with constant bases" $
           property $ within 1000000 $
             eval (simplify (NumBinopE Mul (FracPowE 0 (1/2)) (FloatUnopE Sqrt 1)) :: Exp Double) === 0
-        it "(sin x) ** 2 + (cos x) ** 2 = 1" $
-          simplify (sin x ** 2 + cos x ** 2 :: Exp Double) @?= 1
+        it "normalizes powers without cancelling an unknown trigonometric argument" $
+          simplify (sin x ** 2 + cos x ** 2 :: Exp Double) @?=
+            NatPowE (sin x) 2 + NatPowE (cos x) 2
   where
     x :: Floating a => Exp a
     x = VarE "x"

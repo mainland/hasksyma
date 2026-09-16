@@ -92,6 +92,11 @@ Division by a known zero still remains unreduced. Rules that combine different
 powers or cancel nested inverses remain more conservative and require explicit
 nonzero constants before removing the relevant exclusions.
 
+The identity `sin u ^ 2 + cos u ^ 2 = 1` also remains conservative: cancellation
+requires an explicit exact constant argument. Unknown arguments stay present,
+although their subexpressions can still simplify. This restriction does not
+guarantee identical floating-point evaluation for exact constants.
+
 Opposite terms also cancel: `u-u`, `u+(-u)`, and `(-u)+u` reduce to zero when
 the operands match structurally. For example, `recip x - recip x` simplifies
 to zero without retaining the exclusion at `x = 0`. This algebraic policy also

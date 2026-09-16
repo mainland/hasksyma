@@ -81,10 +81,12 @@ diffTests = describe "Differentiation" $ do
     it "differentiates cos x/x without cancelling the denominator" $
         simplify (diff (cos x / x) x :: Exp Double) @?=
           simplify (-x*sin x/NatPowE x 2 - cos x/NatPowE x 2)
-    it "sin (x + x)^2 + cos (diff (x^2) x)^2 = 1" $
-        simplify (sin (x + x)^(2 :: Integer) + cos (diff (x^(2 :: Integer)) x)^(2 :: Integer) :: Exp Double) @?= 1
-    it "sin (x + x) * sin (diff (x^2) x) + cos(2*x) * cos(x * diff (2*y) y) = 1" $
-        simplify (sin (x + x) * sin (diff (x^(2 :: Integer)) x) + cos(2*x) * cos(x * diff (2*y) y) :: Exp Double) @?= 1
+    it "normalizes derivative arguments without cancelling the trigonometric identity" $
+        simplify (sin (x + x)^(2 :: Integer) + cos (diff (x^(2 :: Integer)) x)^(2 :: Integer) :: Exp Double) @?=
+          NatPowE (sin (2*x)) 2 + NatPowE (cos (2*x)) 2
+    it "collects trigonometric products without discarding their arguments" $
+        simplify (sin (x + x) * sin (diff (x^(2 :: Integer)) x) + cos(2*x) * cos(x * diff (2*y) y) :: Exp Double) @?=
+          NatPowE (sin (2*x)) 2 + NatPowE (cos (2*x)) 2
   where
     valueAt :: Double -> Exp Double -> Double
     valueAt point e = case eval (mapExp replace e) of
