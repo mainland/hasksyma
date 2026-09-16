@@ -14,6 +14,7 @@ import           Test.Hspec                (Spec, describe, it, shouldBe)
 
 import           Hasksyma.Condition
 import           Hasksyma.Const            (Const (..), IsConst)
+import           Hasksyma.Eval             (evalexact)
 import           Hasksyma.Exp
 import           Hasksyma.Simplify.Checked
 
@@ -76,6 +77,48 @@ checkedSimplifyTests = describe "Checked simplification" $ do
           expectNonZeroX (sourceDomain result)
           expectTrue (obligations result)
           checkSimplification source result `shouldBe` True
+      it "subtracts natural exponents in signed arithmetic" $
+        forM_ [(2, 5, -3), (5, 2, 3), (3, 2, 1), (0, 2, -2)] $ \(n, m, k) -> do
+          let source = FracBinopE FDiv (NatPowE x n) (NatPowE x m)
+              expected = if k == 1 then x else IntPowE x k
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) expected `shouldBe` True
+          checkDomain context source (sourceDomain result) `shouldBe` True
+          expectTrue (obligations result)
+          checkSimplification source result `shouldBe` True
+      it "combines natural, signed, reciprocal, and bare-base power encodings" $
+        forM_ [(NatPowE x 2, IntPowE x 2, ConstE (IntegerC 1)),
+               (IntPowE x (-3), NatPowE x 2, IntPowE x (-5)),
+               (NatPowE x 2, IntPowE x (-3), IntPowE x 5),
+               (IntPowE x (-2), IntPowE x (-3), x),
+               (x, NatPowE x 3, IntPowE x (-2)),
+               (FracUnopE Recip x, x, IntPowE x (-2)),
+               (x, FracUnopE Recip x, IntPowE x 2)] $ \(numerator, denominator, expected) -> do
+          let source = FracBinopE FDiv numerator denominator
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) expected `shouldBe` True
+          checkDomain context source (sourceDomain result) `shouldBe` True
+          expectTrue (obligations result)
+          checkSimplification source result `shouldBe` True
+      it "keeps zero-exponent source domains without inventing a nonzero-base condition" $ do
+        let denominator = IntPowE x 0
+            source = FracBinopE FDiv (NatPowE x 0) denominator
+        result <- expectRight (simplifyChecked 1 context source)
+        sameExp (value result) (ConstE (IntegerC 1)) `shouldBe` True
+        case viewCondition (sourceDomain result) of
+          NonZeroView e -> sameExp e denominator `shouldBe` True
+          _             -> fail "Expected the original zero-power denominator condition"
+        checkSimplification source result `shouldBe` True
+      it "preserves exact values across positive, negative, and zero bases" $
+        forM_ [-2, -1, 0, 1, 2] $ \base ->
+          forM_ [-3 .. 3] $ \n ->
+            forM_ [-3 .. 3] $ \m ->
+              if base == 0 && (n < 0 || m /= 0) then pure () else do
+                let operand = ConstE (IntegerC base) :: Exp Rational
+                    source = FracBinopE FDiv (IntPowE operand n) (IntPowE operand m)
+                result <- expectRight (simplifyChecked 1 (emptyContext realScalars) source)
+                evalexact (value result) `shouldBe` evalexact source
+                checkSimplification source result `shouldBe` True
       it "retains nested singularities through cancellation and continuation" $ do
         let inverse = FracUnopE Recip x
             quotient = FracBinopE FDiv (NumBinopE Mul y inverse) y
@@ -102,20 +145,23 @@ checkedSimplifyTests = describe "Checked simplification" $ do
         expectNonZeroX (sourceDomain result)
         expectNonNegative x (obligations result)
         checkSimplification source result `shouldBe` True
-      it "leaves mismatched factors intact" $
+      it "leaves mismatched factors and bases intact" $
         forM_ [FracBinopE FDiv (NumBinopE Mul x x) y,
-               FracBinopE FDiv x (NumBinopE Mul y y)] $ \source -> do
+               FracBinopE FDiv x (NumBinopE Mul y y),
+               FracBinopE FDiv (NatPowE x 2) (IntPowE y 3)] $ \source -> do
           result <- expectRight (simplifyChecked 1 context source)
           sameExp (value result) source `shouldBe` True
           completion result `shouldBe` NoApplicableRule
           checkSimplification source result `shouldBe` True
       it "validates all operands and rejects known zero denominators before cancellation" $ do
         forM_ [FracBinopE FDiv (ConstE (IntegerC 0)) (ConstE (IntegerC 0)),
-               FracBinopE FDiv (NumBinopE Mul Undefined x) x] $ \source ->
+               FracBinopE FDiv (NumBinopE Mul Undefined x) x,
+               FracBinopE FDiv (IntPowE (ConstE (IntegerC 0)) (-1)) x] $ \source ->
           failure (simplifyChecked 1 context source) `shouldBe` Just EmptySourceDomain
-        let unsupported = FracBinopE FDiv (ConstE (IntegerC 0)) (FloatUnopE Log x)
-        failure (simplifyChecked 1 context unsupported)
-          `shouldBe` Just (ConditionFailure UnsupportedOperation)
+        forM_ [FracBinopE FDiv (ConstE (IntegerC 0)) (FloatUnopE Log x),
+               FracBinopE FDiv (FracPowE x 2) (FracPowE x 3)] $ \source ->
+          failure (simplifyChecked 1 context source)
+            `shouldBe` Just (ConditionFailure UnsupportedOperation)
     describe "Proved absolute-value rewrites" $ do
       it "uses a nonnegative assumption or its positive strengthening" $
         forM_ [nonNegative x, positive x] $ \premise -> do
@@ -663,4 +709,5 @@ certificateTests = describe "Public simplification certificates" $ do
       , (ZeroQuotient, FracBinopE FDiv zero x, zero)
       , (CancelProductNumerator, FracBinopE FDiv (NumBinopE Mul x y) x, y)
       , (CancelProductDenominator, FracBinopE FDiv x (NumBinopE Mul x y), FracUnopE Recip y)
+      , (DivideIntegralPowers, FracBinopE FDiv (NatPowE x 5) (NatPowE x 2), IntPowE x 3)
       ]

@@ -16,10 +16,13 @@
 -- must belong to the real fragment supported by 'domainOf'. No traversal crosses
 -- a calculus node or unsupported operation, and no legacy simplifier is called.
 --
--- Quotient rules cancel a matching factor on either side of a product and
--- reduce exact zero numerators. Retain all original denominator exclusions,
+-- Quotient rules cancel a matching factor on either side of a product,
+-- reduce exact zero numerators, and divide integral powers of the same base.
+-- Natural powers, signed powers, reciprocals, and bare bases participate in
+-- the integral exponent law. Retain all original denominator exclusions,
 -- including those inside operands. No additional nonzero obligation is needed
--- on the original domain.
+-- on the original domain. Power differences of zero and one become one and
+-- the base respectively. Other differences use 'IntPowE'.
 --
 -- Checked simplification reduces @abs(u)@ to @u@ when 'decide' proves
 -- 'nonNegative' @u@ in the recorded context. Explicit conditional simplification
@@ -56,7 +59,7 @@ import           Control.Monad              (guard)
 import           Control.Monad.Trans.Class  (lift)
 import           Control.Monad.Trans.Reader (ReaderT, asks, runReaderT)
 import           Data.Foldable              (asum)
-import           Data.Maybe                 (isJust)
+import           Data.Maybe                 (fromMaybe, isJust)
 
 import           Hasksyma.Condition
 import           Hasksyma.Const             (Const (IntegerC, Pi, RationalC), IsConst)
@@ -129,6 +132,7 @@ data Rule a
     | ZeroQuotient              -- ^ @0/u = 0@ on the original quotient domain.
     | CancelProductNumerator    -- ^ Cancel either matching numerator factor.
     | CancelProductDenominator  -- ^ Cancel either matching denominator factor.
+    | DivideIntegralPowers      -- ^ Subtract integral exponents for the same base.
     deriving (Show)
 
 data RewriteMode = PreserveDomain | AllowConditions
@@ -323,6 +327,11 @@ nextRule (FracBinopE FDiv (NumBinopE Mul x y) z)
 nextRule (FracBinopE FDiv z (NumBinopE Mul x y))
     | sameExp x z = pure (CancelProductDenominator, FracUnopE Recip y)
     | sameExp y z = pure (CancelProductDenominator, FracUnopE Recip x)
+nextRule (FracBinopE FDiv numerator denominator)
+    | sameExp x y = pure (DivideIntegralPowers, integralPowerValue x (n - m))
+  where
+    (x, n) = integralPower numerator
+    (y, m) = integralPower denominator
 nextRule (NumBinopE Add x y)
     | opposites x y = pure (CancelOpposites, ConstE (IntegerC 0))
     | trigIdentity x y = pure (PythagoreanIdentity, ConstE (IntegerC 1))
@@ -346,6 +355,26 @@ nextRule (NumUnopE Abs x) = do
         guard (mode == AllowConditions)
         pure (AssumeNonNegativeAbs, x)
 nextRule _ = empty
+
+-- Project one integral power layer, interpreting other supported expressions
+-- as bases to the first power. Do not identify fractional or floating powers
+-- with integral powers. Whole-source validation rejects unsupported syntax.
+-- Convert natural exponents to Integer before subtraction.
+integralPower :: Exp a -> (Exp a, Integer)
+integralPower x = fromMaybe (x, 1) (explicitIntegralPower x)
+
+explicitIntegralPower :: Exp a -> Maybe (Exp a, Integer)
+explicitIntegralPower (NatPowE x n)       = Just (x, toInteger n)
+explicitIntegralPower (IntPowE x n)       = Just (x, n)
+explicitIntegralPower (FracUnopE Recip x) = Just (x, -1)
+explicitIntegralPower _                   = Nothing
+
+-- Use raw constructors. Dropping the base at exponent zero is valid only
+-- because the result retains the source domain, including strict definedness.
+integralPowerValue :: Fractional a => Exp a -> Integer -> Exp a
+integralPowerValue _ 0 = ConstE (IntegerC 1)
+integralPowerValue x 1 = x
+integralPowerValue x n = IntPowE x n
 
 opposites :: (Eq a, IsConst a) => Exp a -> Exp a -> Bool
 opposites x (NumUnopE Neg y) | sameExp x y = True
@@ -438,6 +467,11 @@ checkRule _ _ CancelProductNumerator (FracBinopE FDiv (NumBinopE Mul x y) z) aft
 checkRule _ _ CancelProductDenominator (FracBinopE FDiv z (NumBinopE Mul x y)) after =
     (sameExp x z && sameExp after (FracUnopE Recip y)) ||
     (sameExp y z && sameExp after (FracUnopE Recip x))
+checkRule _ _ DivideIntegralPowers (FracBinopE FDiv numerator denominator) after =
+    sameExp x y && sameExp after (integralPowerValue x (n - m))
+  where
+    (x, n) = integralPower numerator
+    (y, m) = integralPower denominator
 checkRule _ _ CancelOpposites (NumBinopE Add x y) after =
     opposites x y && sameExp after (ConstE (IntegerC 0))
 checkRule _ _ ZeroProduct (NumBinopE Mul x y) after =

@@ -161,6 +161,14 @@ reversed factor orders. The original denominator exclusions remain in
 `sourceDomain`, together with any restrictions inside the operands. These rules
 add no obligations and retain obligations from earlier conditional steps.
 
+Quotients of integral powers with structurally identical bases subtract their
+exponents. Natural powers, signed powers, reciprocals, and bare bases participate
+in this rule. For example, `x^2 / x^5` becomes `IntPowE x (-3)` while retaining
+the original denominator exclusion. Subtraction uses signed arithmetic, even
+for natural exponents. Differences of zero and one produce one and the base
+respectively. Other differences use `IntPowE`. The rule retains the exact source
+domain and adds no obligations.
+
 Checked simplification also reduces `sin(u)^2 + cos(u)^2` to one in either
 term order, with squares represented by `NatPowE` or `IntPowE`. The arguments
 must match structurally. If `u` is `recip x`, the result retains `nonZero x`
