@@ -38,6 +38,13 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 -- There is no rewrite budget. Use 'simplifyWithLimit' to detect cycles or
 -- stop after a bounded number of passes.
 --
+-- Algebraic identities apply under their mathematical scalar laws and may
+-- extend the source domain. In particular, @0*u@ becomes zero wherever @u@
+-- was defined, without retaining its exclusions. This interface returns no
+-- domain conditions or proof and does not preserve IEEE rounding, overflow,
+-- or nonfinite evaluation.
+-- Some rule families below remain more conservative.
+--
 -- Logarithm sums and differences are not combined into logarithms of products
 -- or quotients. Such transformations require domain and branch conditions
 -- that this interface does not carry. Exponential/logarithm cancellation uses
@@ -63,6 +70,12 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 -- Cancelling nested reciprocals or flattening two negative integer powers
 -- also requires an explicitly nonzero exact base. Otherwise the inner
 -- reciprocal remains present, even if the combined exponent is positive.
+--
+-- Multiplication by zero eliminates any other factor, including unknown
+-- expressions, evaluated payloads, and exceptional leaves. This is an explicit
+-- algebraic rewrite, not an extended-arithmetic definition of @0 * infinity@.
+-- Expression construction and @evalexact@ still retain zero products with
+-- unknown factors and their possible domain failures.
 --
 -- Derivative rules give local formulas where the source expression and its
 -- required derivatives are defined. They reduce child derivatives before

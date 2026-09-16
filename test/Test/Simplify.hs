@@ -54,6 +54,7 @@ simplifyTests = describe "Simplification" $ do
     generalPowerDomainTests
     zeroPowerTests
     zeroDivisionTests
+    zeroProductTests
     denominatorCancellationTests
     cancellationDomainTests
     inverseDomainTests
@@ -70,6 +71,75 @@ simplifyTests = describe "Simplification" $ do
 
     tensec :: Int
     tensec = 10 * 1000000
+
+zeroProductTests :: Spec
+zeroProductTests = describe "Zero products" $ do
+    forM_ [("construction", id), ("evalexact", evalexact)] $ \(name, transform) ->
+      forM_ [("left", (0*)), ("right", (*0))] $ \(side, productWithZero) ->
+        it (name ++ " preserves rational zero-division failures on the " ++ side) $ do
+          let e = transform (productWithZero (FracUnopE Recip (VarE "x")))
+          evaluate (rationalValue (at 0 e)) `shouldThrow` anyArithException
+          rationalValue (at 2 e) @?= 0
+    forM_ [("construction", id), ("evalexact", evalexact)] $ \(name, transform) ->
+      forM_ [("left", NumBinopE Mul 0), ("right", \e -> NumBinopE Mul e 0)] $ \(side, productWithZero) -> do
+        it (name ++ " preserves nonfinite variable values on the " ++ side) $
+          forM_ [0/0, 1/0, -1/0] $ \payload ->
+            assertNaN (eval (at payload (transform (productWithZero (VarE "x")))))
+        it (name ++ " preserves exceptional leaves on the " ++ side) $
+          forM_ [Undefined, Infty, NegInfty] $ \leaf ->
+            transform (productWithZero leaf) `shouldNotBe` (0 :: Exp Double)
+    forM_ [0/0, 1/0, -1/0] $ \payload ->
+      it ("preserves nonfinite payloads during construction: " ++ show payload) $
+        forM_ [0 * ConstE (Const payload), ConstE (Const payload) * 0] $ \e ->
+          assertNaN (eval e)
+    it "still reduces zero products with explicit exact constants" $
+      forM_ [IntegerC 2, RationalC (3/2), Pi 1, E] $ \c ->
+        forM_ [NumBinopE Mul 0 (ConstE c), NumBinopE Mul (ConstE c) 0] $ \e ->
+          simplify (e :: Exp Double) @?= 0
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
+      forM_ [("left", NumBinopE Mul 0), ("right", \e -> NumBinopE Mul e 0)] $ \(side, productWithZero) -> do
+        it (name ++ " reduces a symbolic zero product on the " ++ side) $
+          sameExp (transform (productWithZero (VarE "x")) :: Exp Rational) 0 @?= True
+        it (name ++ " extends a rational zero product's domain on the " ++ side) $ do
+          let source = productWithZero (FracUnopE Recip (VarE "x"))
+              result = transform source
+          evaluate (rationalValue (at 0 source)) `shouldThrow` anyArithException
+          sameExp result 0 @?= True
+          rationalValue (at 0 result) @?= 0
+          forM_ [-2, -1/3, 1/3, 2] $ \point ->
+            rationalValue (at point result) @?= rationalValue (at point source)
+    it "reduces symbolic zero products with only Num operations" $
+      forM_ [simp, simplify, simplify'] $ \transform ->
+        forM_ [NumBinopE Mul 0 (VarE "x"), NumBinopE Mul (VarE "x") 0] $ \source ->
+          sameExp (transform source :: Exp Integer) 0 @?= True
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
+      forM_ [("left", NumBinopE Mul 0), ("right", \e -> NumBinopE Mul e 0)] $ \(side, productWithZero) ->
+        it (name ++ " permits zero annihilation of exceptional operands on the " ++ side) $
+          forM_ [Undefined, Infty, NegInfty,
+                 ConstE (Const (0/0)), ConstE (Const (1/0)), ConstE (Const (-1/0))] $ \operand ->
+            sameExp (transform (productWithZero operand) :: Exp Double) 0 @?= True
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
+      it (name ++ " preserves complex zero products on their source domain") $
+        forM_ [NumBinopE Mul 0 (FracUnopE Recip (VarE "x")),
+               NumBinopE Mul (FracUnopE Recip (VarE "x")) 0] $ \source -> do
+          let result = transform source :: Exp (Complex Double)
+          sameExp result 0 @?= True
+          forM_ [1 :+ 1, (-2) :+ 3] $ \point ->
+            eval (at point result) @?= eval (at point source)
+  where
+    at :: (Eq a, Num a, IsConst a) => a -> Exp a -> Exp a
+    at payload = mapExp $ \e -> case e of
+                                 VarE "x" -> ConstE (Const payload)
+                                 _        -> e
+
+    rationalValue :: Exp Rational -> Rational
+    rationalValue e = case eval e of
+                        ConstE c -> fromConst c
+                        result   -> error (show result)
+
+    assertNaN :: Exp Double -> Assertion
+    assertNaN (ConstE c) = assertBool (show c) (isNaN (fromConst c))
+    assertNaN e          = assertFailure (show e)
 
 inverseDomainTests :: Spec
 inverseDomainTests = describe "Cancellation of nested inverses" $ do

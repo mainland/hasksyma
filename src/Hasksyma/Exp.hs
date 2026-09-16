@@ -164,6 +164,11 @@ data FloatBinop = Pow
 -- identity and structural ordering described by t'Const'. They do not decide
 -- general mathematical equality or numerical order. Their laws depend on the
 -- supported constant payloads, and floating NaNs remain nonreflexive.
+--
+-- With partial evaluation enabled, eliminating a factor through multiplication
+-- by zero requires an explicit exact constant. Unknown factors and nonfinite
+-- payloads retain the product. Other identities, such as multiplication by
+-- one, still apply.
 data Exp a where
     -- | An undefined value.
     Undefined   :: Exp a
@@ -505,8 +510,8 @@ instance (Num a, IsConst a, Eq (Exp a)) => Num (Exp a) where
       | e' == e  = NatPowE e (n+m)
 
     e1 * e2
-      | e1 == 0   = 0
-      | e2 == 0   = 0
+      | e1 == 0, ConstE c <- e2, isExact c = 0
+      | e2 == 0, ConstE c <- e1, isExact c = 0
       | e1 == 1   = e2
       | e2 == 1   = e1
       | e1 == e2  = NatPowE e1 2

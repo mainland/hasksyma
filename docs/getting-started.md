@@ -92,6 +92,10 @@ Division by a known zero still remains unreduced. Rules that combine different
 powers or cancel nested inverses remain more conservative and require explicit
 nonzero constants before removing the relevant exclusions.
 
-Construction and `evalexact` retain unknown quotients. This preserves the source
-syntax for callers that need to inspect its domain before choosing a
-simplification operation.
+Multiplication by zero follows the same algebraic policy: `0 * recip x`
+simplifies to zero without retaining the exclusion at `x = 0`. The same reduction
+can occur when simplifying a derivative formula.
+
+Construction and `evalexact` retain unknown quotients and zero products. This
+preserves the source syntax for callers that need to inspect its domain before
+choosing a simplification operation.
