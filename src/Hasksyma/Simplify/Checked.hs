@@ -1,4 +1,5 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- |
 -- Module      :  Hasksyma.Simplify.Checked
@@ -14,6 +15,11 @@
 -- before their parents, visiting left children before right children. Inputs
 -- must belong to the real fragment supported by 'domainOf'. No traversal crosses
 -- a calculus node or unsupported operation, and no legacy simplifier is called.
+--
+-- Reduce @abs(u)@ to @u@ only when 'decide' proves 'nonNegative' @u@ in the
+-- recorded context. Store that premise evidence and replay it against the
+-- actual operand. Unknown or refuted premises leave the absolute value intact.
+-- This rule adds no obligations and does not infer positivity from nonzero.
 --
 -- A result asserts equality under its recorded context, source domain, and
 -- additional obligations. Its value is defined on that region. Extracting the
@@ -37,16 +43,18 @@ module Hasksyma.Simplify.Checked
     checkSimplification,
   ) where
 
-import           Control.Applicative ((<|>))
-import           Control.Monad       (guard)
-import           Data.Foldable       (asum)
-import           Data.Maybe          (isJust)
+import           Control.Applicative        (Alternative (empty, (<|>)))
+import           Control.Monad              (guard)
+import           Control.Monad.Trans.Class  (lift)
+import           Control.Monad.Trans.Reader (ReaderT, asks, runReaderT)
+import           Data.Foldable              (asum)
+import           Data.Maybe                 (isJust)
 
 import           Hasksyma.Condition
-import           Hasksyma.Const      (Const (IntegerC, Pi, RationalC), IsConst)
-import           Hasksyma.Exp        (Exp (..), FloatUnop (Cos, Sin), FracBinop (FDiv),
-                                      FracUnop (Recip), NumBinop (Add, Mul, Sub), NumUnop (Neg),
-                                      sameExp)
+import           Hasksyma.Const             (Const (IntegerC, Pi, RationalC), IsConst)
+import           Hasksyma.Exp               (Exp (..), FloatUnop (Cos, Sin), FracBinop (FDiv),
+                                             FracUnop (Recip), NumBinop (Add, Mul, Sub),
+                                             NumUnop (Abs, Neg), sameExp)
 
 -- | A rejected input, a known empty source domain, or an invalid request.
 data CheckError
@@ -106,7 +114,27 @@ data Rule a
     | ZeroProduct               -- ^ @0*u = 0@, in either factor order.
     | CancelReciprocals         -- ^ @recip (recip u) = u@ on the original domain.
     | PythagoreanIdentity       -- ^ @sin(u)^2 + cos(u)^2 = 1@, in either term order.
+    | NonNegativeAbs (Evidence a) -- ^ @abs u = u@ with replayable nonnegativity evidence.
     deriving (Show)
+
+newtype RewriteEnv a = RewriteEnv
+    { rewriteContext :: Context a
+    }
+
+-- Discovery reads a fixed context and chooses the first successful
+-- candidate. Only the driver records accepted steps, so failed
+-- alternatives and budget probes cannot change the derivation.
+newtype RewriteM a b = RewriteM (ReaderT (RewriteEnv a) Maybe b)
+    deriving newtype (Functor, Applicative, Monad, Alternative)
+
+runRewriteM :: RewriteEnv a -> RewriteM a b -> Maybe b
+runRewriteM environment (RewriteM action) = runReaderT action environment
+
+liftMaybe :: Maybe b -> RewriteM a b
+liftMaybe = RewriteM . lift
+
+askRewriteContext :: RewriteM a (Context a)
+askRewriteContext = RewriteM (asks rewriteContext)
 
 -- | One edge in a path from the expression root to a local rewrite.
 -- Paths use only supported unary and binary operations. A power's base is its
@@ -165,22 +193,24 @@ requireDomain context domain = do
 
 run :: (Eq a, IsConst a) => Int -> Simplification a -> Simplification a
 run budget (Simplification context source current domain hypotheses (Derivation steps) _) =
-    case nextRewrite current of
+    case runRewriteM environment (nextRewrite current) of
       Nothing -> finish current steps NoApplicableRule
       Just (path, rule, next)
           | budget == 0 -> finish current steps BudgetExhausted
           | otherwise   -> run (budget - 1)
                                (finish next (steps ++ [Step path rule current next]) NoApplicableRule)
   where
+    environment = RewriteEnv context
+
     finish e proof = Simplification context source e domain hypotheses (Derivation proof)
 
 nextRewrite :: (Eq a, IsConst a)
-            => Exp a -> Maybe ([Child], Rule a, Exp a)
+            => Exp a -> RewriteM a ([Child], Rule a, Exp a)
 nextRewrite expression =
     asum (map rewriteChild [Operand, LeftOperand, RightOperand]) <|> rewriteHere
   where
     rewriteChild edge = do
-        (child, rebuild) <- childAt edge expression
+        (child, rebuild) <- liftMaybe (childAt edge expression)
         (path, rule, next) <- nextRewrite child
         pure (edge : path, rule, rebuild next)
 
@@ -211,21 +241,27 @@ focus (edge : path) expression = do
     (selected, replace) <- focus path child
     pure (selected, rebuild . replace)
 
--- These rules require their operands to have values on the original domain.
+-- Cancellation rules require their operands to have values on the original domain.
 -- Division and reciprocals supply nonzero requirements on that domain. Since
--- the domain is retained, no rule needs a new hypothesis or a sign test.
-nextRule :: (Eq a, IsConst a) => Exp a -> Maybe (Rule a, Exp a)
+-- the domain is retained, those rules need no new hypothesis or sign test.
+-- Absolute-value removal instead records a proved nonnegativity premise.
+nextRule :: (Eq a, IsConst a) => Exp a -> RewriteM a (Rule a, Exp a)
 nextRule (NumBinopE Sub x y)
-    | sameExp x y = Just (CancelDifference, ConstE (IntegerC 0))
+    | sameExp x y = pure (CancelDifference, ConstE (IntegerC 0))
 nextRule (FracBinopE FDiv x y)
-    | sameExp x y = Just (CancelQuotient, ConstE (IntegerC 1))
+    | sameExp x y = pure (CancelQuotient, ConstE (IntegerC 1))
 nextRule (NumBinopE Add x y)
-    | opposites x y = Just (CancelOpposites, ConstE (IntegerC 0))
-    | trigIdentity x y = Just (PythagoreanIdentity, ConstE (IntegerC 1))
+    | opposites x y = pure (CancelOpposites, ConstE (IntegerC 0))
+    | trigIdentity x y = pure (PythagoreanIdentity, ConstE (IntegerC 1))
 nextRule (NumBinopE Mul x y)
-    | isExactZero x || isExactZero y = Just (ZeroProduct, ConstE (IntegerC 0))
-nextRule (FracUnopE Recip (FracUnopE Recip x)) = Just (CancelReciprocals, x)
-nextRule _ = Nothing
+    | isExactZero x || isExactZero y = pure (ZeroProduct, ConstE (IntegerC 0))
+nextRule (FracUnopE Recip (FracUnopE Recip x)) = pure (CancelReciprocals, x)
+nextRule (NumUnopE Abs x) = do
+    context <- askRewriteContext
+    case decide context (nonNegative x) of
+      Right (Proved evidence) -> pure (NonNegativeAbs evidence, x)
+      _                       -> empty
+nextRule _ = empty
 
 opposites :: (Eq a, IsConst a) => Exp a -> Exp a -> Bool
 opposites x (NumUnopE Neg y) | sameExp x y = True
@@ -256,8 +292,9 @@ isExactZero _                      = False
 -- | Replay a result against the intended original expression under the context
 -- returned by 'contextUsed'. This does not rebind a proof to another context.
 -- Check the exact domain and every rule's input, output, and position in the
--- chain. Obligations must be true for this initial rule set. Completion status
--- is a search report and is not used as evidence of mathematical validity.
+-- chain. Replay premise evidence against the recorded context and its actual
+-- claim without rerunning premise search. Obligations must be true for this
+-- rule set. Completion status is a search report, not mathematical evidence.
 -- This checks equality on the stated domain, not whether that domain is
 -- inhabited. Known empty domains are rejected when starting simplification.
 -- Public constructors and record updates may produce claims that fail replay.
@@ -276,29 +313,31 @@ checkSimplification expected (Simplification context source target domain hypoth
     replay e (Derivation []) = guard (sameExp e target)
     replay e (Derivation (Step path rule before after : rest)) = do
         guard (sameExp e before)
-        checkAt path rule before after
+        checkAt context path rule before after
         replay after (Derivation rest)
 
 checkAt :: (Eq a, IsConst a)
-        => [Child] -> Rule a -> Exp a -> Exp a -> Maybe ()
-checkAt path rule before after = do
+        => Context a -> [Child] -> Rule a -> Exp a -> Exp a -> Maybe ()
+checkAt context path rule before after = do
     (x, rebuild) <- focus path before
     (y, _) <- focus path after
-    guard (checkRule rule x y)
+    guard (checkRule context rule x y)
     guard (sameExp after (rebuild y))
 
 -- Validate each rule directly. Do not trust rule discovery or merely compare
 -- the final answers. These equations use mathematical real scalar semantics.
-checkRule :: (Eq a, IsConst a) => Rule a -> Exp a -> Exp a -> Bool
-checkRule CancelDifference (NumBinopE Sub x y) after =
+checkRule :: (Eq a, IsConst a) => Context a -> Rule a -> Exp a -> Exp a -> Bool
+checkRule _ CancelDifference (NumBinopE Sub x y) after =
     sameExp x y && sameExp after (ConstE (IntegerC 0))
-checkRule CancelQuotient (FracBinopE FDiv x y) after =
+checkRule _ CancelQuotient (FracBinopE FDiv x y) after =
     sameExp x y && sameExp after (ConstE (IntegerC 1))
-checkRule CancelOpposites (NumBinopE Add x y) after =
+checkRule _ CancelOpposites (NumBinopE Add x y) after =
     opposites x y && sameExp after (ConstE (IntegerC 0))
-checkRule ZeroProduct (NumBinopE Mul x y) after =
+checkRule _ ZeroProduct (NumBinopE Mul x y) after =
     (isExactZero x || isExactZero y) && sameExp after (ConstE (IntegerC 0))
-checkRule CancelReciprocals (FracUnopE Recip (FracUnopE Recip x)) after = sameExp after x
-checkRule PythagoreanIdentity (NumBinopE Add x y) after =
+checkRule _ CancelReciprocals (FracUnopE Recip (FracUnopE Recip x)) after = sameExp after x
+checkRule _ PythagoreanIdentity (NumBinopE Add x y) after =
     trigIdentity x y && sameExp after (ConstE (IntegerC 1))
-checkRule _ _ _ = False
+checkRule context (NonNegativeAbs evidence) (NumUnopE Abs x) after =
+    sameExp after x && checkDecision context (nonNegative x) (Proved evidence)
+checkRule _ _ _ _ = False

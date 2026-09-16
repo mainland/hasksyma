@@ -87,6 +87,7 @@ library
     mainland-pretty >= 0.7   && < 0.8,
     symbol          >= 0.2.4 && < 0.3,
     text            >= 1.2   && < 2.2,
+    transformers    >= 0.6   && < 0.7,
     HaTeX           >= 3.21  && < 3.24
 
   if flag(cyclotomic)

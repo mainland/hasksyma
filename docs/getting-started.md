@@ -161,6 +161,13 @@ must match structurally. If `u` is `recip x`, the result retains `nonZero x`
 as its source domain. This is a mathematical real identity and does not promise
 identical floating-point evaluation.
 
+To reduce `abs u` to `u`, checked simplification requires evidence that `u` is
+nonnegative in the recorded context. An explicit nonnegative or positive
+assumption can supply this evidence, as can an exact constant fact. Definedness
+or nonzero alone does not establish the required sign. The result retains its
+source domain and introduces no additional obligations. Replay checks the
+stored evidence against the operand and the recorded context.
+
 The budget counts individual rewrites across the tree. Traversal visits children
 before their parents and left children before right children. `completion`
 reports whether an implemented rule remains applicable. Use `continueChecked`
@@ -176,10 +183,10 @@ operand or power base, and `LeftOperand` and `RightOperand` select binary operan
 
 Construction and record updates establish no validity. Use
 `checkSimplification source result` to replay a candidate against the intended
-source. Replay checks its source domain, rewrite chain, enclosing operators,
-and unaffected operands. Additional `obligations` must be true in this initial
-engine. Continuation replays the supplied result before extending it and rejects
-claims that fail replay.
+source. Replay checks its source domain, rewrite chain, premise evidence,
+enclosing operators, and unaffected operands. Additional `obligations` must be
+true in this initial engine. Continuation replays the supplied result before
+extending it and rejects claims that fail replay.
 
 Replay uses `contextUsed result`. The caller must establish that this is the
 intended context and inspect the conclusion and restrictions. A successful local

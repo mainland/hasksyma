@@ -49,6 +49,59 @@ checkedSimplifyTests = describe "Checked simplification" $ do
       expectNonZeroX (sourceDomain result)
       decision <- expectRight (decide (contextUsed result) (positive x))
       checkDecision (contextUsed result) (positive x) decision `shouldBe` True
+    describe "Proved absolute-value rewrites" $ do
+      it "uses a nonnegative assumption or its positive strengthening" $
+        forM_ [nonNegative x, positive x] $ \premise -> do
+          assumptions <- expectRight (assuming premise context)
+          let source = NumUnopE Abs x
+          result <- expectRight (simplifyChecked 1 assumptions source)
+          sameExp (value result) x `shouldBe` True
+          expectTrue (sourceDomain result)
+          expectTrue (obligations result)
+          checkSimplification source result `shouldBe` True
+      it "uses intrinsic nonnegativity without an explicit assumption" $
+        forM_ [IntegerC 0, RationalC (1/3), Pi 1] $ \constant -> do
+          let source = NumUnopE Abs (ConstE constant)
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) (ConstE constant) `shouldBe` True
+          expectTrue (obligations result)
+          checkSimplification source result `shouldBe` True
+      it "does not infer a sign from definedness or nonzero" $
+        forM_ [trueCondition, defined x, nonZero x, positive y] $ \premise -> do
+          assumptions <- expectRight (assuming premise context)
+          let source = NumUnopE Abs x
+          result <- expectRight (simplifyChecked 1 assumptions source)
+          sameExp (value result) source `shouldBe` True
+          expectTrue (obligations result)
+          completion result `shouldBe` NoApplicableRule
+          checkSimplification source result `shouldBe` True
+      it "leaves a refuted nonnegativity premise unreduced" $ do
+        let source = NumUnopE Abs (ConstE (IntegerC (-1)))
+        result <- expectRight (simplifyChecked 1 context source)
+        sameExp (value result) source `shouldBe` True
+        expectTrue (obligations result)
+        checkSimplification source result `shouldBe` True
+      it "retains a singular source domain after using a sign assumption" $ do
+        let inverse = FracUnopE Recip x
+            source = NumUnopE Abs inverse
+        assumptions <- expectRight (assuming (nonNegative inverse) context)
+        result <- expectRight (simplifyChecked 1 assumptions source)
+        sameExp (value result) inverse `shouldBe` True
+        expectNonZeroX (sourceDomain result)
+        expectTrue (obligations result)
+        checkSimplification source result `shouldBe` True
+      it "retains premise evidence through traversal and continuation" $ do
+        assumptions <- expectRight (assuming (positive x) context)
+        let source = NumBinopE Sub (NumUnopE Abs x) x
+        pending <- expectRight (simplifyChecked 0 assumptions source)
+        completion pending `shouldBe` BudgetExhausted
+        child <- expectRight (continueChecked 1 pending)
+        sameExp (value child) (NumBinopE Sub x x) `shouldBe` True
+        checkSimplification source child `shouldBe` True
+        result <- expectRight (continueChecked 1 child)
+        sameExp (value result) (ConstE (IntegerC 0)) `shouldBe` True
+        expectTrue (obligations result)
+        checkSimplification source result `shouldBe` True
     describe "Checked trigonometric identity" $ do
       it "handles both term orders and integral square encodings" $
         forM_ [(`NatPowE` 2), (`IntPowE` 2)] $ \squareSin ->
@@ -365,6 +418,20 @@ certificateTests = describe "Public simplification certificates" $ do
           forM_ [[first], [second], [second, first], [first, first, second]] $ \steps ->
             checkSimplification source (result { derivation = Derivation steps }) `shouldBe` False
         _ -> fail "Expected two difference cancellations"
+    it "binds premise evidence to its actual operand and recorded context" $ do
+      positiveContext <- expectRight (assuming (positive x) context)
+      decision <- expectRight (decide positiveContext (nonNegative x))
+      case decision of
+        Proved evidence -> do
+          let source = NumUnopE Abs x
+          result <- candidate source x (Derivation [Step [] (NonNegativeAbs evidence) source x])
+          checkSimplification source (result { contextUsed = positiveContext }) `shouldBe` True
+          checkSimplification source result `shouldBe` False
+          let otherSource = NumUnopE Abs y
+          other <- candidate otherSource y
+            (Derivation [Step [] (NonNegativeAbs evidence) otherSource y])
+          checkSimplification otherSource (other { contextUsed = positiveContext }) `shouldBe` False
+        _ -> fail "Expected nonnegativity evidence from the positive assumption"
     it "does not treat completion status as mathematical evidence" $ do
       let source = FracBinopE FDiv x x
       result <- expectRight (simplifyChecked 1 context source)
