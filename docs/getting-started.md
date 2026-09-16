@@ -148,10 +148,12 @@ check whether a domain holds under the current assumptions.
 ## Checked simplification and certificates
 
 `simplifyChecked budget context expression` returns a restricted value with its
-original source, context, exact source domain, and derivation. It initially
-cancels identical differences and quotients throughout the supported real
-expression tree. For example, cancelling `x/x` produces one while retaining
-`nonZero x` as its source domain. Extracting `value` alone loses that restriction.
+original source, context, exact source domain, and derivation. It cancels
+identical differences and quotients, opposite terms, zero products, and nested
+reciprocals throughout the supported real expression tree. For example,
+cancelling `x/x` produces one while retaining `nonZero x` as its source domain.
+The same exclusion remains when reducing `0 * recip x` to zero. Extracting
+`value` alone loses that restriction.
 
 The budget counts individual rewrites across the tree. Traversal visits children
 before their parents and left children before right children. `completion`

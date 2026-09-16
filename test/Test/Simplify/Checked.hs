@@ -49,6 +49,71 @@ checkedSimplifyTests = describe "Checked simplification" $ do
       expectNonZeroX (sourceDomain result)
       decision <- expectRight (decide (contextUsed result) (positive x))
       checkDecision (contextUsed result) (positive x) decision `shouldBe` True
+    describe "Further root identities" $ do
+      it "cancels opposite terms in either order without losing singularities" $ do
+        let inverse = FracUnopE Recip x
+        forM_ [NumBinopE Add inverse (NumUnopE Neg inverse),
+               NumBinopE Add (NumUnopE Neg inverse) inverse] $ \source -> do
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) (ConstE (IntegerC 0)) `shouldBe` True
+          expectNonZeroX (sourceDomain result)
+          expectTrue (obligations result)
+          checkSimplification source result `shouldBe` True
+      it "reduces exact zero products in either order while retaining singularities" $
+        forM_ [IntegerC 0, RationalC 0, Pi 0] $ \zero -> do
+          let inverse = FracUnopE Recip x
+          forM_ [NumBinopE Mul (ConstE zero) inverse,
+                 NumBinopE Mul inverse (ConstE zero)] $ \source -> do
+            result <- expectRight (simplifyChecked 1 context source)
+            sameExp (value result) (ConstE (IntegerC 0)) `shouldBe` True
+            expectNonZeroX (sourceDomain result)
+            expectTrue (obligations result)
+            checkSimplification source result `shouldBe` True
+      it "cancels nested reciprocals while retaining the full original domain" $ do
+        let source = FracUnopE Recip (FracUnopE Recip x)
+        result <- expectRight (simplifyChecked 1 context source)
+        sameExp (value result) x `shouldBe` True
+        checkDomain context source (sourceDomain result) `shouldBe` True
+        case viewCondition (sourceDomain result) of
+          ConjunctionView [first, second] -> do
+            expectNonZeroX first
+            case viewCondition second of
+              NonZeroView e -> sameExp e (FracUnopE Recip x) `shouldBe` True
+              _             -> fail "Expected the reciprocal restriction"
+          _ -> fail "Expected both original reciprocal restrictions"
+        expectTrue (obligations result)
+        checkSimplification source result `shouldBe` True
+      it "replays multiple reciprocal cancellations across a budget boundary" $ do
+        let source = iterate (FracUnopE Recip) x !! 4
+        pending <- expectRight (simplifyChecked 1 context source)
+        sameExp (value pending) (FracUnopE Recip (FracUnopE Recip x)) `shouldBe` True
+        completion pending `shouldBe` BudgetExhausted
+        checkSimplification source pending `shouldBe` True
+        result <- expectRight (continueChecked 1 pending)
+        sameExp (original result) source `shouldBe` True
+        sameExp (value result) x `shouldBe` True
+        checkDomain context source (sourceDomain result) `shouldBe` True
+        completion result `shouldBe` NoApplicableRule
+        checkSimplification source result `shouldBe` True
+        checkSimplification (value pending) result `shouldBe` False
+      it "rejects known undefined operands before erasing them" $
+        forM_ [NumBinopE Mul (ConstE (IntegerC 0)) Undefined,
+               NumBinopE Add Undefined (NumUnopE Neg Undefined),
+               FracUnopE Recip (FracUnopE Recip (ConstE (IntegerC 0)))] $ \source ->
+          failure (simplifyChecked 1 context source) `shouldBe` Just EmptySourceDomain
+      it "rejects uninterpreted operands before erasing them" $ do
+        let source = NumBinopE Mul (ConstE (IntegerC 0)) (FloatUnopE Log x)
+        failure (simplifyChecked 1 context source)
+          `shouldBe` Just (ConditionFailure UnsupportedOperation)
+      it "leaves unmatched opposites and nonzero products unchanged" $
+        forM_ [NumBinopE Add x (NumUnopE Neg y),
+               NumBinopE Add (NumUnopE Neg y) x,
+               NumBinopE Mul (ConstE (RationalC (1/100))) x,
+               FracUnopE Recip x] $ \source -> do
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) source `shouldBe` True
+          completion result `shouldBe` NoApplicableRule
+          checkSimplification source result `shouldBe` True
     it "reports known empty domains before cancellation, even with zero budget" $
       forM_ [0, 1] $ \budget ->
         forM_ [NumBinopE Sub Undefined Undefined,
@@ -102,6 +167,16 @@ checkedSimplifyTests = describe "Checked simplification" $ do
         sameExp (value result) (NumBinopE Add (ConstE (IntegerC 0)) (ConstE (IntegerC 0)))
           `shouldBe` True
         completion result `shouldBe` NoApplicableRule
+        checkSimplification source result `shouldBe` True
+      it "applies a newly enabled parent rule after its child" $ do
+        let inverse = FracUnopE Recip x
+            source = NumBinopE Mul (NumBinopE Sub inverse inverse) y
+        pending <- expectRight (simplifyChecked 1 context source)
+        sameExp (value pending) (NumBinopE Mul (ConstE (IntegerC 0)) y) `shouldBe` True
+        completion pending `shouldBe` BudgetExhausted
+        result <- expectRight (continueChecked 1 pending)
+        sameExp (value result) (ConstE (IntegerC 0)) `shouldBe` True
+        expectNonZeroX (sourceDomain result)
         checkSimplification source result `shouldBe` True
       it "replays a path through different operators without changing their parameters" $ do
         let inverse = FracUnopE Recip x
@@ -255,4 +330,7 @@ certificateTests = describe "Public simplification certificates" $ do
     identities =
       [ (CancelDifference, NumBinopE Sub x x, zero)
       , (CancelQuotient, FracBinopE FDiv x x, one)
+      , (CancelOpposites, NumBinopE Add x (NumUnopE Neg x), zero)
+      , (ZeroProduct, NumBinopE Mul zero x, zero)
+      , (CancelReciprocals, FracUnopE Recip (FracUnopE Recip x), x)
       ]

@@ -7,9 +7,9 @@
 -- Maintainer  :  mainland@drexel.edu
 --
 -- Mathematical simplification with retained source domains and replayable
--- derivations. Rules cancel identical differences and quotients. Traverse
--- supported children before their parents, visiting left children before right
--- children. Inputs
+-- derivations. Rules cancel identical differences and quotients, opposite
+-- terms, zero products, and nested reciprocals. Traverse supported children
+-- before their parents, visiting left children before right children. Inputs
 -- must belong to the real fragment supported by 'domainOf'. No traversal crosses
 -- a calculus node or unsupported operation, and no legacy simplifier is called.
 --
@@ -41,9 +41,10 @@ import           Data.Foldable       (asum)
 import           Data.Maybe          (isJust)
 
 import           Hasksyma.Condition
-import           Hasksyma.Const      (Const (IntegerC), IsConst)
+import           Hasksyma.Const      (Const (IntegerC, Pi, RationalC), IsConst)
 import           Hasksyma.Exp        (Exp (..), FloatUnop (Cos, Sin), FracBinop (FDiv),
-                                      NumBinop (Sub), sameExp)
+                                      FracUnop (Recip), NumBinop (Add, Mul, Sub), NumUnop (Neg),
+                                      sameExp)
 
 -- | A rejected input, a known empty source domain, or an invalid request.
 data CheckError
@@ -99,6 +100,9 @@ newtype Derivation a = Derivation [Step a]
 data Rule a
     = CancelDifference          -- ^ @u-u = 0@ for identical operands.
     | CancelQuotient            -- ^ @u/u = 1@ on the original quotient domain.
+    | CancelOpposites           -- ^ @u+(-u) = 0@, in either term order.
+    | ZeroProduct               -- ^ @0*u = 0@, in either factor order.
+    | CancelReciprocals         -- ^ @recip (recip u) = u@ on the original domain.
     deriving (Show)
 
 -- | One edge in a path from the expression root to a local rewrite.
@@ -212,7 +216,25 @@ nextRule (NumBinopE Sub x y)
     | sameExp x y = Just (CancelDifference, ConstE (IntegerC 0))
 nextRule (FracBinopE FDiv x y)
     | sameExp x y = Just (CancelQuotient, ConstE (IntegerC 1))
+nextRule (NumBinopE Add x y)
+    | opposites x y = Just (CancelOpposites, ConstE (IntegerC 0))
+nextRule (NumBinopE Mul x y)
+    | isExactZero x || isExactZero y = Just (ZeroProduct, ConstE (IntegerC 0))
+nextRule (FracUnopE Recip (FracUnopE Recip x)) = Just (CancelReciprocals, x)
 nextRule _ = Nothing
+
+opposites :: (Eq a, IsConst a) => Exp a -> Exp a -> Bool
+opposites x (NumUnopE Neg y) | sameExp x y = True
+opposites (NumUnopE Neg x) y = sameExp x y
+opposites _ _ = False
+
+-- Recognize only exact zero forms in the supported fragment, without evaluating
+-- opaque payloads or deciding whether a compound expression is zero.
+isExactZero :: Exp a -> Bool
+isExactZero (ConstE (IntegerC 0))  = True
+isExactZero (ConstE (RationalC 0)) = True
+isExactZero (ConstE (Pi 0))        = True
+isExactZero _                      = False
 
 -- | Replay a result against the intended original expression under the context
 -- returned by 'contextUsed'. This does not rebind a proof to another context.
@@ -255,4 +277,9 @@ checkRule CancelDifference (NumBinopE Sub x y) after =
     sameExp x y && sameExp after (ConstE (IntegerC 0))
 checkRule CancelQuotient (FracBinopE FDiv x y) after =
     sameExp x y && sameExp after (ConstE (IntegerC 1))
+checkRule CancelOpposites (NumBinopE Add x y) after =
+    opposites x y && sameExp after (ConstE (IntegerC 0))
+checkRule ZeroProduct (NumBinopE Mul x y) after =
+    (isExactZero x || isExactZero y) && sameExp after (ConstE (IntegerC 0))
+checkRule CancelReciprocals (FracUnopE Recip (FracUnopE Recip x)) after = sameExp after x
 checkRule _ _ _ = False
