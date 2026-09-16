@@ -8,7 +8,7 @@
 
 module Main where
 
-import           Test.Hspec     (Spec, hspec)
+import           Test.Hspec            (Spec, hspec)
 
 import           Test.Condition
 import           Test.Const
@@ -23,6 +23,7 @@ import           Test.PEval
 #endif
 import           Test.Root
 import           Test.Simplify
+import           Test.Simplify.Checked
 
 main :: IO ()
 main = hspec spec
@@ -34,6 +35,7 @@ spec = do
     exactConstTests
     evalTests
     simplifyTests
+    checkedSimplifyTests
     diffTests
     integrateTests
     rootTests

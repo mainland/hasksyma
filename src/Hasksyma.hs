@@ -24,6 +24,7 @@ module Hasksyma
     module Hasksyma.LaTeX,
     module Hasksyma.Pretty,
     module Hasksyma.Simplify,
+    module Hasksyma.Simplify.Checked,
   )
 where
 
@@ -36,3 +37,4 @@ import           Hasksyma.Integrate
 import           Hasksyma.LaTeX
 import           Hasksyma.Pretty
 import           Hasksyma.Simplify
+import           Hasksyma.Simplify.Checked

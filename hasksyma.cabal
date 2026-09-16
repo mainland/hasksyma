@@ -79,6 +79,7 @@ library
     Hasksyma.LaTeX
     Hasksyma.Pretty
     Hasksyma.Simplify
+    Hasksyma.Simplify.Checked
 
   build-depends:
     base            >= 4.20  && < 4.23,
@@ -135,6 +136,7 @@ test-suite full
     Test.PEval
     Test.Root
     Test.Simplify
+    Test.Simplify.Checked
 
   build-depends:
     hasksyma,

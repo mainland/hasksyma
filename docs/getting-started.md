@@ -144,3 +144,38 @@ a proposed condition. It can reject a logically equivalent condition with a
 different representation. It also rejects merely sufficient conditions, such
 as proposing `positive x` as the complete domain of `recip x`. Use `decide` to
 check whether a domain holds under the current assumptions.
+
+## Checked simplification and certificates
+
+`simplifyChecked budget context expression` returns a restricted value with its
+original source, context, exact source domain, and derivation. It initially
+cancels identical differences and quotients throughout the supported real
+expression tree. For example, cancelling `x/x` produces one while retaining
+`nonZero x` as its source domain. Extracting `value` alone loses that restriction.
+
+The budget counts individual rewrites across the tree. Traversal visits children
+before their parents and left children before right children. `completion`
+reports whether an implemented rule remains applicable. Use `continueChecked`
+to extend a result while retaining its original source and restrictions.
+Unsupported syntax and known empty source domains are rejected, including with
+a zero budget. Unknown domain satisfiability is allowed.
+
+`Simplification` is a public record. `Derivation`, `Step`, `Child`, and `Rule`
+expose constructors for inspecting or building candidate certificates. A step
+contains a path to the local rewrite, its rule, and the whole expression before
+and after the step. The empty path selects the root. `Operand` selects a unary
+operand or power base, and `LeftOperand` and `RightOperand` select binary operands.
+
+Construction and record updates establish no validity. Use
+`checkSimplification source result` to replay a candidate against the intended
+source. Replay checks its source domain, rewrite chain, enclosing operators,
+and unaffected operands. Additional `obligations` must be true in this initial
+engine. Continuation replays the supplied result before extending it and rejects
+claims that fail replay.
+
+Replay uses `contextUsed result`. The caller must establish that this is the
+intended context and inspect the conclusion and restrictions. A successful local
+check is separate from acceptance by Lean or another proof assistant. It does
+not establish that the source domain is inhabited. `completion` is a search
+report and is not checked by replay. Derived `Show` output is diagnostic, not
+a certificate serialization format.
