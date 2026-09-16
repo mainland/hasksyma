@@ -1,15 +1,17 @@
-cabal-version: 3.4
-name:          hasksyma
-version:       0.1
-license:       BSD-3-Clause
-license-file:  LICENSE
-copyright:     (c) 2023 Drexel University
-author:        Geoffrey Mainland <mainland@drexel.edu>
-maintainer:    Geoffrey Mainland <mainland@drexel.edu>
-stability:     alpha
-homepage:      https://github.com/mainland/hasksyma
-category:      Language
-synopsis:      Symbolic expressions
+cabal-version:      3.4
+name:               hasksyma
+version:            0.1
+synopsis:           Symbolic expressions
+description:        Symbolic expressions.
+stability:          alpha
+homepage:           https://github.com/mainland/hasksyma
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             Geoffrey Mainland <mainland@drexel.edu>
+maintainer:         Geoffrey Mainland <mainland@drexel.edu>
+copyright:          (c) 2023 Drexel University
+category:           Language
+build-type:         Simple
 extra-doc-files:
   README.md
   docs/configuration.md
@@ -28,29 +30,29 @@ extra-source-files:
   cabal.project
   cabal.project.cyclotomic
   Dockerfile
-tested-with:   GHC==9.10.3,
-               GHC==9.12.4,
-               GHC==9.14.1
+tested-with:
+  GHC ==9.10.3
+  GHC ==9.12.4
+  GHC ==9.14.1
 
-description:
-  Symbolic expressions.
-
-build-type: Simple
+source-repository head
+  type: git
+  location: https://github.com/mainland/hasksyma.git
 
 flag cyclotomic
-    description: Enable support for cyclotomic numbers
-    manual: True
-    default: False
+  description: Enable support for cyclotomic numbers
+  manual: True
+  default: False
 
 flag ihaskell
-    description: Enable notebook display support
-    manual: True
-    default: False
+  description: Enable notebook display support
+  manual: True
+  default: False
 
 flag partial-evaluation
-    description: Enable partial evaluation in Exp instances
-    manual: True
-    default: True
+  description: Enable partial evaluation in Exp instances
+  manual: True
+  default: True
 
 common common-settings
   default-language: GHC2024
@@ -67,7 +69,6 @@ library
   import: common-settings
   hs-source-dirs: src
   ghc-options: -Wmissing-export-lists
-
   exposed-modules:
     Hasksyma
     Hasksyma.Condition
@@ -80,19 +81,18 @@ library
     Hasksyma.Pretty
     Hasksyma.Simplify
     Hasksyma.Simplify.Checked
-
   build-depends:
-    base            >= 4.20  && < 4.23,
-    containers      >= 0.6   && < 0.9,
-    mainland-pretty >= 0.7   && < 0.8,
-    symbol          >= 0.2.4 && < 0.3,
-    text            >= 1.2   && < 2.2,
-    transformers    >= 0.6   && < 0.7,
-    HaTeX           >= 3.21  && < 3.24
+    base >=4.20 && <4.23,
+    containers >=0.6 && <0.9,
+    mainland-pretty >=0.7 && <0.8,
+    symbol >=0.2.4 && <0.3,
+    text >=1.2 && <2.2,
+    transformers >=0.6 && <0.7,
+    HaTeX >=3.21 && <3.24
 
   if flag(cyclotomic)
     cpp-options: -DCYCLOTOMIC
-    build-depends: cyclotomic >= 1.1 && < 1.2
+    build-depends: cyclotomic >=1.1 && <1.2
 
   if flag(partial-evaluation)
     cpp-options: -DPEVAL
@@ -110,21 +110,18 @@ library ihaskell
   -- The released IHaskell dependency requires ghc <9.13.
   if impl(ghc >= 9.13)
     buildable: False
-
   build-depends:
-    base            >= 4.20  && < 4.23,
+    base >=4.20 && <4.23,
     hasksyma:hasksyma,
-    HaTeX           >= 3.21  && < 3.24,
-    ihaskell        >= 0.13  && < 0.14,
-    text            >= 1.2   && < 2.2
+    HaTeX >=3.21 && <3.24,
+    ihaskell >=0.13 && <0.14,
+    text >=1.2 && <2.2
 
 test-suite full
   import: common-settings
   type: exitcode-stdio-1.0
   main-is: Main.hs
-  hs-source-dirs:
-    test
-
+  hs-source-dirs: test
   other-modules:
     Test.Arbitrary
     Test.Condition
@@ -138,22 +135,17 @@ test-suite full
     Test.Root
     Test.Simplify
     Test.Simplify.Checked
-
   build-depends:
-    hasksyma,
-    base            >= 4.20 && < 4.23,
-    containers      >= 0.6  && < 0.9,
-    hspec           >= 2.9  && < 2.12,
-    mainland-pretty >= 0.7  && < 0.8,
-    HUnit           >= 1.6  && < 1.7,
-    QuickCheck      >= 2.13 && < 2.18
+    hasksyma:hasksyma,
+    base >=4.20 && <4.23,
+    containers >=0.6 && <0.9,
+    hspec >=2.9 && <2.12,
+    mainland-pretty >=0.7 && <0.8,
+    HUnit >=1.6 && <1.7,
+    QuickCheck >=2.13 && <2.18
 
   if flag(cyclotomic)
     cpp-options: -DCYCLOTOMIC
 
   if flag(partial-evaluation)
     cpp-options: -DPEVAL
-
-source-repository head
-  type:     git
-  location: https://github.com/mainland/hasksyma.git
