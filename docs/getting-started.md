@@ -109,3 +109,24 @@ can occur when simplifying a derivative formula.
 Construction and `evalexact` retain unknown quotients, opposite terms, and zero
 products. This preserves the source syntax for callers that need to inspect its
 domain before choosing a simplification operation.
+
+## Mathematical contexts and conditions
+
+`Hasksyma.Condition`, also re-exported by `Hasksyma`, provides explicit
+mathematical contexts. Start with `emptyContext realScalars` and use `assuming`
+to add hypotheses. The interpretation assigns mathematical real meanings to
+supported expressions independently of their numerical carrier. It does not
+change construction, numerical evaluation, or ordinary simplification.
+
+Build propositions with `defined`, `nonZero`, `positive`, `nonNegative`, and
+`allOf`. Query them with `decide`, which returns `Proved`, `Refuted`, or
+`Unknown`. Unsupported syntax is a separate error. The initial checker handles
+exact leaf facts, explicit assumptions, and elementary implications such as
+positivity implying nonzero. It does not infer general compound-expression
+facts or establish that an accepted set of assumptions is consistent.
+
+Use `checkDecision` to replay evidence against a particular context and claim,
+and `assumptionsUsed` to inspect its explicit dependencies. Use `viewCondition`
+to inspect or render propositions without evaluating their expressions. These
+checks are local rule checks, not external proof-assistant validation. See the
+module's Haddock documentation for the supported syntax and interpretation.

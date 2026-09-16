@@ -15,7 +15,8 @@
 -- True
 
 module Hasksyma
-  ( module Hasksyma.Const,
+  ( module Hasksyma.Condition,
+    module Hasksyma.Const,
     module Hasksyma.Diff,
     module Hasksyma.Eval,
     module Hasksyma.Exp,
@@ -26,6 +27,7 @@ module Hasksyma
   )
 where
 
+import           Hasksyma.Condition
 import           Hasksyma.Const
 import           Hasksyma.Diff
 import           Hasksyma.Eval

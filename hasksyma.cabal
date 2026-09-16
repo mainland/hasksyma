@@ -70,6 +70,7 @@ library
 
   exposed-modules:
     Hasksyma
+    Hasksyma.Condition
     Hasksyma.Const
     Hasksyma.Diff
     Hasksyma.Eval
@@ -124,6 +125,7 @@ test-suite full
 
   other-modules:
     Test.Arbitrary
+    Test.Condition
     Test.Const
     Test.Diff
     Test.Eval

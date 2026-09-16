@@ -10,6 +10,7 @@ module Main where
 
 import           Test.Hspec     (Spec, hspec)
 
+import           Test.Condition
 import           Test.Const
 import           Test.Diff
 import           Test.Eval
@@ -28,6 +29,7 @@ main = hspec spec
 
 spec :: Spec
 spec = do
+    conditionTests
     constTests
     exactConstTests
     evalTests
