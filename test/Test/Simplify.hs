@@ -59,6 +59,7 @@ simplifyTests = describe "Simplification" $ do
     cancellationDomainTests
     inverseDomainTests
     exactNegationTests
+    oppositeTermTests
     fixExpTests
     norvigTests
     prodTests
@@ -131,6 +132,87 @@ zeroProductTests = describe "Zero products" $ do
     at payload = mapExp $ \e -> case e of
                                  VarE "x" -> ConstE (Const payload)
                                  _        -> e
+
+    rationalValue :: Exp Rational -> Rational
+    rationalValue e = case eval e of
+                        ConstE c -> fromConst c
+                        result   -> error (show result)
+
+    assertNaN :: Exp Double -> Assertion
+    assertNaN (ConstE c) = assertBool (show c) (isNaN (fromConst c))
+    assertNaN e          = assertFailure (show e)
+
+oppositeTermTests :: Spec
+oppositeTermTests = describe "Cancellation of opposite terms" $ do
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
+      forM_ (oppositeForms (FracUnopE Recip (VarE "x"))) $ \(form, e) ->
+        it (name ++ " permits domain extension in " ++ form) $ do
+          evaluate (rationalValue (at 0 e)) `shouldThrow` anyArithException
+          sameExp (transform e) 0 @?= True
+          rationalValue (at 0 (transform e)) @?= 0
+          forM_ [-2, -1/3, 1/3, 2] $ \point ->
+            rationalValue (at point (transform e)) @?= rationalValue (at point e)
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) -> do
+      forM_ (oppositeForms (VarE "x")) $ \(form, e) ->
+        it (name ++ " cancels symbolic operands in " ++ form) $ do
+          sameExp (transform e :: Exp Double) 0 @?= True
+          forM_ [0/0, 1/0, -1/0] $ \value -> do
+            assertNaN (eval (at value e))
+            sameExp (eval (at value (transform e))) 0 @?= True
+      it (name ++ " cancels identical nonfinite constant payloads") $
+        forM_ [0/0, 1/0, -1/0] $ \value ->
+          forM_ (oppositeForms (ConstE (Const value))) $ \(_, e) ->
+            sameExp (transform e) 0 @?= True
+      it (name ++ " cancels identical exceptional leaves") $
+        forM_ [Undefined, Infty, NegInfty] $ \value ->
+          forM_ (oppositeForms value) $ \(_, e) ->
+            sameExp (transform e :: Exp Double) 0 @?= True
+      it (name ++ " still cancels explicit exact constants") $
+        forM_ [IntegerC 3, RationalC (3/2), Pi 1, Pi (-1), E] $ \value ->
+          transform (NumBinopE Sub (ConstE value) (ConstE value) :: Exp Double) @?= 0
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
+      forM_ (oppositeForms (FracUnopE Recip (VarE "x"))) $ \(form, e) ->
+        it (name ++ " preserves complex values on the source domain in " ++ form) $ do
+          sameExp (transform e :: Exp (Complex Double)) 0 @?= True
+          forM_ [1 :+ 1, (-2) :+ 3] $ \point ->
+            eval (at point (transform e)) @?= eval (at point e)
+    it "cancels symbolic opposites with only Num operations" $
+      forM_ [simp, simplify, simplify'] $ \transform ->
+        forM_ (oppositeForms (VarE "x")) $ \(_, e) ->
+          sameExp (transform e :: Exp Integer) 0 @?= True
+    forM_ [("simp", simp), ("simplify", simplify), ("simplify'", simplify')] $ \(name, transform) ->
+      it (name ++ " does not cancel unequal operands") $
+        let x = VarE "x"
+            y = NumBinopE Add x 1
+        in forM_ [NumBinopE Sub x y, NumBinopE Add x (NumUnopE Neg y),
+                  NumBinopE Add (NumUnopE Neg x) y] $ \e ->
+             forM_ [-2, 0, 2] $ \point ->
+               rationalValue (at point (transform e)) @?= rationalValue (at point e)
+    it "retains reciprocal exclusions during construction" $
+      let u = FracUnopE Recip (VarE "x")
+      in forM_ [u-u, u+(-u), (-u)+u] $ \e ->
+           evaluate (rationalValue (at 0 e)) `shouldThrow` anyArithException
+    forM_ (oppositeForms (FracUnopE Recip (VarE "x"))) $ \(form, e) ->
+      it ("evalexact retains reciprocal exclusions in " ++ form) $
+        evaluate (rationalValue (at 0 (evalexact e))) `shouldThrow` anyArithException
+    it "retains nonfinite arithmetic during construction and exact evaluation" $
+      forM_ [0/0, 1/0, -1/0] $ \payload ->
+        let u = ConstE (Const payload)
+        in do
+          forM_ [u-u, u+(-u), (-u)+u] $ \e -> assertNaN (eval e)
+          forM_ (oppositeForms u) $ \(_, e) -> assertNaN (eval (evalexact e))
+  where
+    oppositeForms :: Num a => Exp a -> [(String, Exp a)]
+    oppositeForms e =
+      [ ("u - u", NumBinopE Sub e e)
+      , ("u + (-u)", NumBinopE Add e (NumUnopE Neg e))
+      , ("(-u) + u", NumBinopE Add (NumUnopE Neg e) e)
+      ]
+
+    at :: (Eq a, Num a, IsConst a) => a -> Exp a -> Exp a
+    at value = mapExp $ \e -> case e of
+                               VarE "x" -> ConstE (Const value)
+                               _        -> e
 
     rationalValue :: Exp Rational -> Rational
     rationalValue e = case eval e of
@@ -650,11 +732,9 @@ terminationTests = describe "Rewrite termination" $ do
       assertTerminates $ case simplifyn (-1) (ConstE (Const (0/0)) :: Exp Double) of
         ConstE (Const value) -> isNaN value
         _                    -> False
-    it "does not use NaN syntax identity for algebraic cancellation" $
+    it "terminates when algebraic cancellation removes NaN operands" $
       let nan = ConstE (Const (0/0)) :: Exp Double
-      in assertTerminates $ case simplify (NumBinopE Sub nan nan) of
-        NumBinopE Sub (ConstE (Const a)) (ConstE (Const b)) -> isNaN a && isNaN b
-        _                                                   -> False
+      in assertTerminates $ sameExp (simplify (NumBinopE Sub nan nan)) 0
 
     describe "Bounded rewriting" $ do
       it "reports an unchanged NaN as a fixed point" $

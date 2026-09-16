@@ -92,10 +92,15 @@ Division by a known zero still remains unreduced. Rules that combine different
 powers or cancel nested inverses remain more conservative and require explicit
 nonzero constants before removing the relevant exclusions.
 
+Opposite terms also cancel: `u-u`, `u+(-u)`, and `(-u)+u` reduce to zero when
+the operands match structurally. For example, `recip x - recip x` simplifies
+to zero without retaining the exclusion at `x = 0`. This algebraic policy also
+permits cancellation of identical nonfinite payloads and exceptional leaves.
+
 Multiplication by zero follows the same algebraic policy: `0 * recip x`
 simplifies to zero without retaining the exclusion at `x = 0`. The same reduction
 can occur when simplifying a derivative formula.
 
-Construction and `evalexact` retain unknown quotients and zero products. This
-preserves the source syntax for callers that need to inspect its domain before
-choosing a simplification operation.
+Construction and `evalexact` retain unknown quotients, opposite terms, and zero
+products. This preserves the source syntax for callers that need to inspect its
+domain before choosing a simplification operation.

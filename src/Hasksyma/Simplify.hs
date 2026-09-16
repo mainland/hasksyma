@@ -71,6 +71,12 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 -- also requires an explicitly nonzero exact base. Otherwise the inner
 -- reciprocal remains present, even if the combined exponent is positive.
 --
+-- Cancel structurally identical operands in @u-u@, @u+(-u)@, and @(-u)+u@
+-- using 'sameExp'. This algebraic rule applies to unknown expressions and
+-- evaluated payloads, including nonfinite values and exceptional leaves.
+-- It may extend the source domain and does not define extended arithmetic.
+-- Construction and @evalexact@ still retain unknown opposite terms.
+--
 -- Multiplication by zero eliminates any other factor, including unknown
 -- expressions, evaluated payloads, and exceptional leaves. This is an explicit
 -- algebraic rewrite, not an extended-arithmetic definition of @0 * infinity@.
@@ -375,16 +381,18 @@ simp :: forall a . (Eq a, Num a, IsConst a) => Exp a -> Exp a
 -- conservative policy, unlike the domain-extending factor rules below.
 simp (FracUnopE Recip (FracUnopE Recip x)) | isNonzeroExactConstant x = x
 
+simp (NumBinopE Add x (NumUnopE Neg y)) | sameExp x y = 0
+simp (NumBinopE Add (NumUnopE Neg x) y) | sameExp x y = 0
+
 simp (NumBinopE Add x y)
   | x == 0  = y
   | y == 0  = x
   | x == y  = 2 * x
-  | y == -x = 0
 
 simp (NumBinopE Sub x y)
-  | x == 0 = -y
-  | y == 0 = x
-  | x == y = 0
+  | x == 0      = -y
+  | y == 0      = x
+  | sameExp x y = 0
 
 simp (NumBinopE Mul x y)
   | x == 0    = 0
