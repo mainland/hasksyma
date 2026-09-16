@@ -169,6 +169,15 @@ for natural exponents. Differences of zero and one produce one and the base
 respectively. Other differences use `IntPowE`. The rule retains the exact source
 domain and adds no obligations.
 
+Products of integral powers with the same base add exponents, and nested
+integral powers multiply exponents. For example, `x^(-2) * x^2` becomes one
+restricted to `nonZero x`. Likewise, `(x^(-2))^0` becomes one while retaining
+the inner power's restriction. Natural-only products and nesting use `NatPowE`
+and work with a `Num` carrier. Signed or reciprocal forms use `IntPowE`.
+Result exponents zero and one reduce to one and the base. These rules retain
+source domains and existing obligations. Single power layers stay unchanged,
+and fractional or general floating powers remain unsupported.
+
 Checked simplification also reduces `sin(u)^2 + cos(u)^2` to one in either
 term order, with squares represented by `NatPowE` or `IntPowE`. The arguments
 must match structurally. If `u` is `recip x`, the result retains `nonZero x`

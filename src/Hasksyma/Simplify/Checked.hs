@@ -24,6 +24,13 @@
 -- on the original domain. Power differences of zero and one become one and
 -- the base respectively. Other differences use 'IntPowE'.
 --
+-- Products add integral exponents and nested integral powers multiply them.
+-- These laws retain exclusions even when negative exponents cancel or an outer
+-- zero exponent drops its base. Natural-only products and nesting use 'NatPowE'
+-- and need only 'Num'. Signed or reciprocal forms use 'IntPowE'. Result exponents
+-- zero and one reduce to one and the base. A single power layer is left intact.
+-- Fractional and general floating powers remain outside this interpretation.
+--
 -- Checked simplification reduces @abs(u)@ to @u@ when 'decide' proves
 -- 'nonNegative' @u@ in the recorded context. Explicit conditional simplification
 -- can instead introduce that requirement when its truth is unknown. Replay
@@ -60,6 +67,7 @@ import           Control.Monad.Trans.Class  (lift)
 import           Control.Monad.Trans.Reader (ReaderT, asks, runReaderT)
 import           Data.Foldable              (asum)
 import           Data.Maybe                 (fromMaybe, isJust)
+import           Numeric.Natural            (Natural)
 
 import           Hasksyma.Condition
 import           Hasksyma.Const             (Const (IntegerC, Pi, RationalC), IsConst)
@@ -133,6 +141,8 @@ data Rule a
     | CancelProductNumerator    -- ^ Cancel either matching numerator factor.
     | CancelProductDenominator  -- ^ Cancel either matching denominator factor.
     | DivideIntegralPowers      -- ^ Subtract integral exponents for the same base.
+    | MultiplyIntegralPowers    -- ^ Add integral exponents for the same base.
+    | FlattenIntegralPowers     -- ^ Multiply nested integral exponents.
     deriving (Show)
 
 data RewriteMode = PreserveDomain | AllowConditions
@@ -337,6 +347,7 @@ nextRule (NumBinopE Add x y)
     | trigIdentity x y = pure (PythagoreanIdentity, ConstE (IntegerC 1))
 nextRule (NumBinopE Mul x y)
     | isExactZero x || isExactZero y = pure (ZeroProduct, ConstE (IntegerC 0))
+    | Just next <- multiplyIntegralPowers x y = pure (MultiplyIntegralPowers, next)
 nextRule (FracUnopE Recip (FracUnopE Recip x)) = pure (CancelReciprocals, x)
 nextRule (NumUnopE Abs x) = do
     context <- askRewriteContext
@@ -354,7 +365,9 @@ nextRule (NumUnopE Abs x) = do
         mode <- askRewriteMode
         guard (mode == AllowConditions)
         pure (AssumeNonNegativeAbs, x)
-nextRule _ = empty
+nextRule expression = do
+    next <- liftMaybe (flattenIntegralPowers expression)
+    pure (FlattenIntegralPowers, next)
 
 -- Project one integral power layer, interpreting other supported expressions
 -- as bases to the first power. Do not identify fractional or floating powers
@@ -368,6 +381,44 @@ explicitIntegralPower (NatPowE x n)       = Just (x, toInteger n)
 explicitIntegralPower (IntPowE x n)       = Just (x, n)
 explicitIntegralPower (FracUnopE Recip x) = Just (x, -1)
 explicitIntegralPower _                   = Nothing
+
+multiplyIntegralPowers :: (Num a, Eq a, IsConst a) => Exp a -> Exp a -> Maybe (Exp a)
+multiplyIntegralPowers left right = do
+    guard (sameExp x y)
+    case (left, right) of
+        -- Recover the Fractional dictionary from a signed or reciprocal operand.
+        (IntPowE{}, _)         -> pure (integralPowerValue x (n + m))
+        (_, IntPowE{})         -> pure (integralPowerValue x (n + m))
+        (FracUnopE Recip _, _) -> pure (integralPowerValue x (n + m))
+        (_, FracUnopE Recip _) -> pure (integralPowerValue x (n + m))
+        -- Remaining operands are natural powers or bare bases. The explicit
+        -- guard makes conversion to Natural total without strengthening Num.
+        _ -> do
+            guard (n >= 0 && m >= 0)
+            pure (naturalPowerValue x (fromInteger (n + m)))
+  where
+    (x, n) = integralPower left
+    (y, m) = integralPower right
+
+flattenIntegralPowers :: Exp a -> Maybe (Exp a)
+flattenIntegralPowers (NatPowE (NatPowE x m) n) =
+    Just (naturalPowerValue x (n * m))
+flattenIntegralPowers (NatPowE (IntPowE x m) n) =
+    Just (integralPowerValue x (toInteger n * m))
+flattenIntegralPowers (NatPowE (FracUnopE Recip x) n) =
+    Just (integralPowerValue x (negate (toInteger n)))
+flattenIntegralPowers (IntPowE inner n) = do
+    (x, m) <- explicitIntegralPower inner
+    pure (integralPowerValue x (n * m))
+flattenIntegralPowers (FracUnopE Recip inner) = do
+    (x, m) <- explicitIntegralPower inner
+    pure (integralPowerValue x (negate m))
+flattenIntegralPowers _ = Nothing
+
+naturalPowerValue :: Num a => Exp a -> Natural -> Exp a
+naturalPowerValue _ 0 = ConstE (IntegerC 1)
+naturalPowerValue x 1 = x
+naturalPowerValue x n = NatPowE x n
 
 -- Use raw constructors. Dropping the base at exponent zero is valid only
 -- because the result retains the source domain, including strict definedness.
@@ -472,6 +523,14 @@ checkRule _ _ DivideIntegralPowers (FracBinopE FDiv numerator denominator) after
   where
     (x, n) = integralPower numerator
     (y, m) = integralPower denominator
+checkRule _ _ MultiplyIntegralPowers (NumBinopE Mul left right) after =
+    sameExp x y && matchesIntegralPower x (n + m) after
+  where
+    (x, n) = integralPower left
+    (y, m) = integralPower right
+checkRule _ _ FlattenIntegralPowers before after
+    | Just (inner, n) <- explicitIntegralPower before
+    , Just (x, m) <- explicitIntegralPower inner = matchesIntegralPower x (n * m) after
 checkRule _ _ CancelOpposites (NumBinopE Add x y) after =
     opposites x y && sameExp after (ConstE (IntegerC 0))
 checkRule _ _ ZeroProduct (NumBinopE Mul x y) after =
@@ -487,3 +546,13 @@ checkRule _ _ AssumeNonNegativeAbs (NumUnopE Abs x) after = sameExp after x
 checkRule _ required UseNonNegativeAbs (NumUnopE Abs x) after =
     sameExp after x && any (sameExp x) required
 checkRule _ _ _ _ _ = False
+
+-- Check the exponent law independently of rewrite construction. Either integral
+-- constructor can express the result, with constants and bare bases for 0 and 1.
+matchesIntegralPower :: (Eq a, IsConst a) => Exp a -> Integer -> Exp a -> Bool
+matchesIntegralPower x 1 after
+    | sameExp after x = True
+matchesIntegralPower _ 0 (ConstE (IntegerC 1)) = True
+matchesIntegralPower x n (NatPowE y m) = sameExp x y && n == toInteger m
+matchesIntegralPower x n (IntPowE y m) = sameExp x y && n == m
+matchesIntegralPower _ _ _ = False

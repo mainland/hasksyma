@@ -40,7 +40,8 @@ checkedSimplifyTests = describe "Checked simplification" $ do
       let inverse = FracUnopE Recip x
       forM_ [inverse, NatPowE inverse 0] $ \operand -> do
         let source = NumBinopE Sub operand operand
-        result <- expectRight (simplifyChecked 1 context source)
+        -- Both zero-power children can now rewrite before the subtraction.
+        result <- expectRight (simplifyChecked 3 context source)
         sameExp (value result) (ConstE (IntegerC 0)) `shouldBe` True
         expectNonZeroX (sourceDomain result)
         checkSimplification source result `shouldBe` True
@@ -146,8 +147,8 @@ checkedSimplifyTests = describe "Checked simplification" $ do
         expectNonNegative x (obligations result)
         checkSimplification source result `shouldBe` True
       it "leaves mismatched factors and bases intact" $
-        forM_ [FracBinopE FDiv (NumBinopE Mul x x) y,
-               FracBinopE FDiv x (NumBinopE Mul y y),
+        forM_ [FracBinopE FDiv (NumBinopE Mul x (VarE "z")) y,
+               FracBinopE FDiv x (NumBinopE Mul y (VarE "z")),
                FracBinopE FDiv (NatPowE x 2) (IntPowE y 3)] $ \source -> do
           result <- expectRight (simplifyChecked 1 context source)
           sameExp (value result) source `shouldBe` True
@@ -160,6 +161,125 @@ checkedSimplifyTests = describe "Checked simplification" $ do
           failure (simplifyChecked 1 context source) `shouldBe` Just EmptySourceDomain
         forM_ [FracBinopE FDiv (ConstE (IntegerC 0)) (FloatUnopE Log x),
                FracBinopE FDiv (FracPowE x 2) (FracPowE x 3)] $ \source ->
+          failure (simplifyChecked 1 context source)
+            `shouldBe` Just (ConditionFailure UnsupportedOperation)
+    describe "Checked integral-power laws" $ do
+      it "combines products across natural, signed, reciprocal, and bare encodings" $
+        forM_ [(NatPowE x 2, NatPowE x 3, NatPowE x 5),
+               (IntPowE x (-2), NatPowE x 2, ConstE (IntegerC 1)),
+               (NatPowE x 3, IntPowE x (-2), x),
+               (IntPowE x (-2), IntPowE x (-3), IntPowE x (-5)),
+               (FracUnopE Recip x, x, ConstE (IntegerC 1)),
+               (x, FracUnopE Recip x, ConstE (IntegerC 1)),
+               (FracUnopE Recip x, NatPowE x 3, IntPowE x 2),
+               (NatPowE x 3, FracUnopE Recip x, IntPowE x 2),
+               (x, x, NatPowE x 2)] $ \(left, right, expected) -> do
+          let source = NumBinopE Mul left right
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) expected `shouldBe` True
+          checkDomain context source (sourceDomain result) `shouldBe` True
+          expectTrue (obligations result)
+          checkSimplification source result `shouldBe` True
+      it "retains the excluded zero after negative powers cancel" $ do
+        let source = NumBinopE Mul (IntPowE x (-2)) (NatPowE x 2)
+        result <- expectRight (simplifyChecked 1 context source)
+        sameExp (value result) (ConstE (IntegerC 1)) `shouldBe` True
+        expectNonZeroX (sourceDomain result)
+        checkSimplification source result `shouldBe` True
+      it "flattens natural, signed, and reciprocal power layers" $
+        forM_ [(NatPowE (NatPowE x 2) 3, NatPowE x 6),
+               (NatPowE (IntPowE x (-2)) 3, IntPowE x (-6)),
+               (IntPowE (NatPowE x 2) (-3), IntPowE x (-6)),
+               (IntPowE (IntPowE x (-2)) (-3), IntPowE x 6),
+               (NatPowE (FracUnopE Recip x) 3, IntPowE x (-3)),
+               (IntPowE (FracUnopE Recip x) (-3), IntPowE x 3),
+               (FracUnopE Recip (NatPowE x 3), IntPowE x (-3)),
+               (FracUnopE Recip (IntPowE x (-3)), IntPowE x 3)] $ \(source, expected) -> do
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) expected `shouldBe` True
+          checkDomain context source (sourceDomain result) `shouldBe` True
+          expectTrue (obligations result)
+          checkSimplification source result `shouldBe` True
+      it "retains both original exclusions when two negative power layers cancel" $ do
+        let inner = IntPowE x (-2)
+            source = IntPowE inner (-3)
+        result <- expectRight (simplifyChecked 1 context source)
+        sameExp (value result) (IntPowE x 6) `shouldBe` True
+        case viewCondition (sourceDomain result) of
+          ConjunctionView [dx, di] -> do
+            expectNonZeroX dx
+            case viewCondition di of
+              NonZeroView e -> sameExp e inner `shouldBe` True
+              _             -> fail "Expected the inner-power exclusion"
+          _ -> fail "Expected both original exclusions"
+        checkSimplification source result `shouldBe` True
+      it "retains strict operand domains when an outer zero power drops its base" $ do
+        forM_ [NatPowE (IntPowE x (-2)) 0, IntPowE (IntPowE x (-2)) 0] $ \source -> do
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) (ConstE (IntegerC 1)) `shouldBe` True
+          expectNonZeroX (sourceDomain result)
+          checkSimplification source result `shouldBe` True
+      it "does not exclude zero from products and nesting of nonnegative powers" $
+        forM_ [NumBinopE Mul (NatPowE x 0) (NatPowE x 0),
+               NatPowE (NatPowE x 0) 0,
+               NatPowE (IntPowE x 0) 3] $ \source -> do
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) (ConstE (IntegerC 1)) `shouldBe` True
+          expectTrue (sourceDomain result)
+          expectTrue (obligations result)
+          checkSimplification source result `shouldBe` True
+      it "supports natural products and nesting without a Fractional carrier" $ do
+        let z = VarE "z" :: Exp Integer
+        forM_ [(NumBinopE Mul (NatPowE z 2) z, NatPowE z 3),
+               (NatPowE (NatPowE z 2) 3, NatPowE z 6)] $ \(source, expected) -> do
+          result <- expectRight (simplifyChecked 1 (emptyContext realScalars) source)
+          sameExp (value result) expected `shouldBe` True
+          checkSimplification source result `shouldBe` True
+      it "preserves exact products and nested powers on their defined domains" $
+        forM_ [-2, -1, 0, 1, 2] $ \base ->
+          forM_ [-3 .. 3] $ \n ->
+            forM_ [-3 .. 3] $ \m -> do
+              let operand = ConstE (IntegerC base) :: Exp Rational
+                  multiplied = NumBinopE Mul (IntPowE operand n) (IntPowE operand m)
+                  nested = IntPowE (IntPowE operand n) m
+                  sources = [multiplied | base /= 0 || (n >= 0 && m >= 0)] ++
+                            [nested | base /= 0 || (n >= 0 && (n == 0 || m >= 0))]
+              forM_ sources $ \source -> do
+                result <- expectRight (simplifyChecked 2 (emptyContext realScalars) source)
+                evalexact (value result) `shouldBe` evalexact source
+                checkSimplification source result `shouldBe` True
+      it "shares a budget across nested powers and a later product" $ do
+        let source = NumBinopE Mul (IntPowE (IntPowE x (-2)) (-3)) (IntPowE x (-6))
+        pending <- expectRight (simplifyChecked 0 context source)
+        sameExp (value pending) source `shouldBe` True
+        completion pending `shouldBe` BudgetExhausted
+        child <- expectRight (continueChecked 1 pending)
+        sameExp (value child) (NumBinopE Mul (IntPowE x 6) (IntPowE x (-6))) `shouldBe` True
+        result <- expectRight (continueChecked 1 child)
+        sameExp (value result) (ConstE (IntegerC 1)) `shouldBe` True
+        checkDomain context source (sourceDomain result) `shouldBe` True
+        checkSimplification source result `shouldBe` True
+      it "retains conditional obligations through power cancellation" $ do
+        let source = NumBinopE Mul (NumUnopE Abs x) (FracUnopE Recip x)
+        pending <- expectRight (simplifyConditional 1 context source)
+        result <- expectRight (continueChecked 1 pending)
+        sameExp (value result) (ConstE (IntegerC 1)) `shouldBe` True
+        expectNonZeroX (sourceDomain result)
+        expectNonNegative x (obligations result)
+        checkSimplification source result `shouldBe` True
+      it "leaves different bases and single power layers unchanged" $
+        forM_ [NumBinopE Mul (IntPowE x (-2)) (NatPowE y 2),
+               NatPowE x 3, IntPowE x (-2), FracUnopE Recip x] $ \source -> do
+          result <- expectRight (simplifyChecked 2 context source)
+          sameExp (value result) source `shouldBe` True
+          completion result `shouldBe` NoApplicableRule
+          checkSimplification source result `shouldBe` True
+      it "validates erased operands and rejects unsupported power semantics" $ do
+        forM_ [NatPowE (IntPowE Undefined 2) 0,
+               IntPowE (IntPowE (ConstE (IntegerC 0)) (-2)) (-3)] $ \source ->
+          failure (simplifyChecked 1 context source) `shouldBe` Just EmptySourceDomain
+        forM_ [NatPowE (FracPowE x (1/2)) 2,
+               NumBinopE Mul (FracPowE x (1/2)) (FracPowE x (-1/2))] $ \source ->
           failure (simplifyChecked 1 context source)
             `shouldBe` Just (ConditionFailure UnsupportedOperation)
     describe "Proved absolute-value rewrites" $ do
@@ -710,4 +830,6 @@ certificateTests = describe "Public simplification certificates" $ do
       , (CancelProductNumerator, FracBinopE FDiv (NumBinopE Mul x y) x, y)
       , (CancelProductDenominator, FracBinopE FDiv x (NumBinopE Mul x y), FracUnopE Recip y)
       , (DivideIntegralPowers, FracBinopE FDiv (NatPowE x 5) (NatPowE x 2), IntPowE x 3)
+      , (MultiplyIntegralPowers, NumBinopE Mul (NatPowE x 2) (IntPowE x (-1)), x)
+      , (FlattenIntegralPowers, IntPowE (IntPowE x (-3)) (-2), NatPowE x 6)
       ]
