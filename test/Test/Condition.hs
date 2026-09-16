@@ -60,11 +60,13 @@ renderCondition renderExpression condition = case viewCondition condition of
 conditionTests :: Spec
 conditionTests = describe "Conditions" $ do
     describe "Structural inspection" $ do
-      it "supports recursive rendering of normalized conditions" $ do
+      it "supports recursive rendering of normalized conditions and source domains" $ do
         let claim = allOf [defined x, allOf [nonZero x, trueCondition, positive y], nonNegative y]
             render = renderCondition (const "u")
         render claim `shouldBe` "(defined(u) and nonzero(u) and positive(u) and nonnegative(u))"
         render (allOf []) `shouldBe` "true"
+        domain <- expectRight $ domainOf realContext (FracUnopE Recip (ConstE (IntegerC 0)))
+        render domain `shouldBe` "false"
       it "allows rendering uninterpreted payloads without inspecting or validating them" $ do
         let claim = defined (ConstE (Const Opaque))
         renderCondition (const "opaque") claim `shouldBe` "defined(opaque)"
@@ -113,13 +115,14 @@ conditionTests = describe "Conditions" $ do
             result <- expectRight $ decide realContext claim
             verdict result `shouldBe` Disproved
             checkDecision realContext claim result `shouldBe` True
-      it "leaves supported composite facts unknown without premises" $
+      it "leaves arbitrary composite signs unknown without premises" $
         forM_ supportedExpressions $ \expression ->
-          forM_ predicates $ \predicate ->
+          forM_ [nonZero, positive, nonNegative] $ \predicate ->
             (verdict <$> decide realContext (predicate expression)) `shouldBe` Right Undetermined
-      it "does not infer definedness by erasing a zero power's base" $
-        forM_ [NatPowE (FracUnopE Recip x) 0, IntPowE Undefined 0] $ \expression ->
+      it "does not infer definedness by erasing a zero power's base" $ do
+        forM_ [NatPowE (FracUnopE Recip x) 0, IntPowE (FracUnopE Recip x) 0] $ \expression ->
           (verdict <$> decide realContext (defined expression)) `shouldBe` Right Undetermined
+        (verdict <$> decide realContext (defined (IntPowE Undefined 0))) `shouldBe` Right Disproved
       it "proves a conjunction when every member is established" $ do
         let claim = allOf [defined x, positive (ConstE E), nonNegative (ConstE (IntegerC 0))]
         result <- expectRight $ decide realContext claim
@@ -222,6 +225,104 @@ conditionTests = describe "Conditions" $ do
         (verdict <$> decide (emptyContext realScalars) (defined (ConstE (CycC 1) :: Exp (Complex Double))))
           `shouldBe` Left UnsupportedConstant
 #endif
+    describe "Exact source domains" $ do
+      it "recognizes total real arithmetic and trigonometric expressions" $
+        forM_ [NumBinopE Sub x x, NumUnopE Abs x, NumUnopE Signum x,
+               NatPowE x 0, IntPowE x 3, FloatUnopE Sin x, FloatUnopE Cos x] $ \expression -> do
+          checkDomain realContext expression trueCondition `shouldBe` True
+          result <- expectRight $ decide realContext (defined expression)
+          verdict result `shouldBe` Established
+          checkDecision realContext (defined expression) result `shouldBe` True
+      it "retains reciprocal singularities in cancelled or erased operands" $ do
+        let inverse = FracUnopE Recip x
+        forM_ [inverse, NumBinopE Sub inverse inverse,
+               NumBinopE Mul (ConstE (IntegerC 0)) inverse,
+               NatPowE inverse 0, IntPowE inverse 0,
+               FloatUnopE Sin inverse] $ \expression -> do
+          checkDomain realContext expression (nonZero x) `shouldBe` True
+          checkDomain realContext expression trueCondition `shouldBe` False
+      it "retains both numerator and denominator restrictions" $ do
+        let expression = FracBinopE FDiv (FracUnopE Recip x) y
+        checkDomain realContext expression (allOf [nonZero x, nonZero y]) `shouldBe` True
+        checkDomain realContext expression (nonZero y) `shouldBe` False
+      it "preserves nested reciprocal requirements without minimizing them" $ do
+        let inverse = FracUnopE Recip x
+            expression = FracUnopE Recip inverse
+        checkDomain realContext expression (allOf [nonZero x, nonZero inverse]) `shouldBe` True
+      it "requires a nonzero base for negative integral powers" $ do
+        checkDomain realContext (IntPowE x (-3)) (nonZero x) `shouldBe` True
+        checkDomain realContext (NatPowE x 3) trueCondition `shouldBe` True
+      it "does not replace an exact domain with a sufficient positivity condition" $
+        checkDomain realContext (FracUnopE Recip x) (positive x) `shouldBe` False
+      it "retains exclusions even when the context establishes them" $ do
+        context <- expectRight $ assuming (positive x) realContext
+        let expression = FracUnopE Recip x
+        domain <- expectRight $ domainOf context expression
+        checkDomain realContext expression domain `shouldBe` True
+        checkDomain context expression trueCondition `shouldBe` False
+        (verdict <$> decide context domain) `shouldBe` Right Established
+      it "recognizes closed reciprocal and power domains exactly" $
+        forM_ [-2, 0, 3] $ \base ->
+          forM_ [-3, 0, 2] $ \power -> do
+            let expression = IntPowE (ConstE (IntegerC base)) power
+                expected = if power < 0 && base == 0 then Disproved else Established
+            domain <- expectRight $ domainOf realContext expression
+            (verdict <$> decide realContext domain) `shouldBe` Right expected
+            (verdict <$> decide realContext (defined expression)) `shouldBe` Right expected
+      it "propagates empty domains through strict operations" $ do
+        let failure = FracBinopE FDiv (ConstE (IntegerC 1)) (ConstE (IntegerC 0))
+        forM_ [failure, FracUnopE Recip failure,
+               NumBinopE Mul (ConstE (IntegerC 0)) failure,
+               NatPowE failure 0, IntPowE failure 0,
+               NumUnopE Abs failure, FloatUnopE Cos failure] $ \expression -> do
+          domain <- expectRight $ domainOf realContext expression
+          (verdict <$> decide realContext domain) `shouldBe` Right Disproved
+          forM_ predicates $ \predicate -> do
+            let claim = predicate expression
+            result <- expectRight $ decide realContext claim
+            verdict result `shouldBe` Disproved
+            checkDecision realContext claim result `shouldBe` True
+      it "rejects assumptions about expressions known to have no value" $
+        forM_ predicates $ \predicate ->
+          contextError (assuming (predicate (FracUnopE Recip (ConstE (IntegerC 0)))) realContext)
+            `shouldBe` Just ContradictoryAssumptions
+      it "validates all syntax before absorbing a false domain" $ do
+        let unsupported = FloatUnopE Log x
+        forM_ [NumBinopE Mul Undefined unsupported,
+               NumBinopE Add unsupported Undefined,
+               NatPowE unsupported 0] $ \expression -> do
+          contextError (domainOf realContext expression) `shouldBe` Just UnsupportedOperation
+          checkDomain realContext expression trueCondition `shouldBe` False
+      it "rejects unsupported proposed domain conditions" $
+        checkDomain realContext x (defined (ConstE (Const (1 :: Double)))) `shouldBe` False
+      it "replays definedness evidence using the required hypotheses" $ do
+        left <- expectRight $ assuming (positive x) realContext
+        right <- expectRight $ assuming (nonZero y) realContext
+        both <- expectRight $ assuming (nonZero y) left
+        let claim = defined (NumBinopE Add (FracUnopE Recip x) (IntPowE y (-2)))
+        result <- expectRight $ decide both claim
+        verdict result `shouldBe` Established
+        checkDecision both claim result `shouldBe` True
+        checkDecision left claim result `shouldBe` False
+        checkDecision right claim result `shouldBe` False
+        case result of
+          Proved evidence -> length (assumptionsUsed evidence) `shouldBe` 2
+          _               -> fail "Expected evidence for the source domain"
+      it "rejects domain evidence for another expression or polarity" $ do
+        context <- expectRight $ assuming (nonZero x) realContext
+        let claim = defined (FracUnopE Recip x)
+        result <- expectRight $ decide context claim
+        checkDecision context (defined (FracUnopE Recip y)) result `shouldBe` False
+        case result of
+          Proved evidence -> checkDecision context claim (Refuted evidence) `shouldBe` False
+          _               -> fail "Expected definedness evidence"
+      it "terminates through nested negative and zero powers" $ do
+        let expression = iterate (\e -> NatPowE (IntPowE e (-1)) 0) x !! 10
+        (verdict <$> decide realContext (defined expression)) `shouldBe` Right Undetermined
+      it "does not require an ordered numerical carrier" $ do
+        let expression = FracUnopE Recip (VarE "z") :: Exp (Complex Double)
+        domain <- expectRight $ domainOf (emptyContext realScalars) expression
+        checkDomain (emptyContext realScalars) expression domain `shouldBe` True
     describe "Evidence replay" $ do
       it "replays every premise used by a conjunction" $ do
         left <- expectRight $ assuming (positive x) realContext

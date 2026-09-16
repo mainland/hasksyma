@@ -26,12 +26,12 @@
 -- functions see only the expression supplied, including any earlier partial
 -- evaluation performed while constructing it.
 --
--- The first checker recognizes facts about leaves, explicit assumptions, and
--- elementary predicate implications. It does not yet propagate definedness or
--- compute signs through compound expressions. Such queries can return 'Unknown'
--- even when a more capable checker could settle them. Conditions and evidence
--- are abstract, and their 'Show' output is diagnostic rather than a serialization
--- format.
+-- The checker recognizes facts about leaves, explicit assumptions, elementary
+-- predicate implications, and structural definedness conditions. It does not
+-- generally compute signs through compound expressions. Such queries can return
+-- 'Unknown' even when a more capable checker could settle them. Conditions and
+-- evidence are abstract, and their 'Show' output is diagnostic rather than a
+-- serialization format.
 
 module Hasksyma.Condition
   ( Interpretation,
@@ -49,6 +49,8 @@ module Hasksyma.Condition
     nonNegative,
     trueCondition,
     allOf,
+    domainOf,
+    checkDomain,
     Decision (..),
     Evidence,
     decide,
@@ -56,7 +58,7 @@ module Hasksyma.Condition
     assumptionsUsed,
   ) where
 
-import           Data.List      (find)
+import           Data.List      (find, nubBy)
 
 import           Hasksyma.Const (Const (..), IsConst)
 import           Hasksyma.Exp   (Exp (..), FloatUnop (Cos, Sin), sameExp)
@@ -162,6 +164,75 @@ conjuncts (Boolean True)   = []
 conjuncts (Conjunction cs) = concatMap conjuncts cs
 conjuncts c                = [c]
 
+-- | Compute the exact domain of a supported expression under the selected
+-- interpretation. The resulting condition is equivalent to 'defined' of the
+-- original expression. It retains nonzero denominator and negative-power
+-- requirements, including in products by zero and powers with exponent zero.
+--
+-- Normalize intrinsic leaf facts and repeated conjuncts, without using context
+-- hypotheses to erase restrictions. A false domain remains false. Validate all
+-- input syntax before normalization, even when another operand has no value.
+-- This is structural domain analysis, not general minimization of conditions.
+domainOf :: (Eq a, IsConst a)
+         => Context a -> Exp a -> Either ContextError (Condition a)
+domainOf (Context RealScalars _) expression = do
+    validateExpression expression
+    realDomain expression
+
+-- | Replay structural domain analysis and check a proposed normalized domain.
+-- Equivalent conditions with different syntax may be rejected. This does not
+-- decide general logical equivalence or prove a merely sufficient condition to
+-- be the full domain.
+checkDomain :: (Eq a, IsConst a)
+            => Context a -> Exp a -> Condition a -> Bool
+checkDomain context expression condition =
+    validateCondition condition == Right () &&
+    case domainOf context expression of
+      Right expected -> sameCondition expected condition
+      Left _         -> False
+
+realDomain :: (Eq a, IsConst a) => Exp a -> Either ContextError (Condition a)
+realDomain Undefined = pure (Boolean False)
+realDomain Infty = pure (Boolean False)
+realDomain NegInfty = pure (Boolean False)
+realDomain VarE{} = pure trueCondition
+realDomain (ConstE c) = case constantSign c of
+    Just _  -> pure trueCondition
+    Nothing -> Left UnsupportedConstant
+realDomain (NumUnopE _ x) = realDomain x
+realDomain (FracUnopE _ x) = nonzeroDomain x
+realDomain (NumBinopE _ x y) =
+    conjoinDomains <$> traverse realDomain [x, y]
+realDomain (FracBinopE _ x y) = do
+    dx <- realDomain x
+    dy <- nonzeroDomain y
+    pure (conjoinDomains [dx, dy])
+realDomain (NatPowE x _) = realDomain x
+realDomain (IntPowE x n)
+    | n < 0     = nonzeroDomain x
+    | otherwise = realDomain x
+realDomain (FloatUnopE op x)
+    | op == Sin || op == Cos = realDomain x
+realDomain _ = Left UnsupportedOperation
+
+nonzeroDomain :: (Eq a, IsConst a) => Exp a -> Either ContextError (Condition a)
+nonzeroDomain expression = do
+    domain <- realDomain expression
+    let condition = nonZero expression
+    pure (conjoinDomains [domain, maybe condition Boolean (elementary condition)])
+
+-- Inputs have already been validated, so absorbing false cannot hide an
+-- unsupported expression. Keep this separate from the public conjunction builder.
+conjoinDomains :: (Eq a, IsConst a) => [Condition a] -> Condition a
+conjoinDomains conditions
+    | any isFalse flattened = Boolean False
+    | otherwise             = allOf (nubBy sameCondition flattened)
+  where
+    flattened = concatMap conjuncts conditions
+
+    isFalse (Boolean False) = True
+    isFalse _               = False
+
 -- | A proved proposition, a proved negation of that proposition, or an
 -- unsettled query. Refuting positivity does not prove negativity, since zero
 -- and undefined expressions also fail the positivity predicate.
@@ -182,6 +253,8 @@ data Reason a
     | Hypothesis (Condition a)
     | AllProved [Evidence a]
     | OneRefuted Int (Evidence a)
+    | DefinedOn (Evidence a)
+    | UndefinedValue (Evidence a)
     deriving (Show)
 
 -- | Add a hypothesis after validating its syntax and checking for a known
@@ -199,6 +272,8 @@ assuming condition context@(Context interpretation hypotheses) = do
 -- | Decide a proposition using exact leaf facts, explicit hypotheses, and
 -- elementary implications. Positivity implies nonnegativity, nonzero, and
 -- definedness. Nonnegativity and nonzero each imply definedness.
+-- Definedness follows from the exact structural domain. An established lack
+-- of a value also refutes nonzero, positivity, and nonnegativity.
 --
 -- Validate the entire condition before inference, including all conjuncts.
 -- Unsupported syntax is an error, distinct from 'Unknown'. Neither numerical
@@ -209,6 +284,9 @@ decide context condition = do
     validateCondition condition
     pure (infer context condition)
 
+-- A definedness query reduces to predicates on strict subexpressions. A sign
+-- query may first check definedness of the same expression, but that check
+-- never asks for its sign again. No fixed-point proof search is needed.
 infer :: (Eq a, IsConst a) => Context a -> Condition a -> Decision a
 infer context@(Context interpretation hypotheses) condition
     | Just truth <- elementary condition = result truth Elementary
@@ -221,6 +299,17 @@ infer context@(Context interpretation hypotheses) condition
              [] -> case traverse proved decisions of
                      Just evidence -> result True (AllProved evidence)
                      Nothing       -> Unknown
+    | Atom IsDefined expression <- condition =
+        case domainOf context expression of
+          Right domain -> case infer context domain of
+              Proved evidence  -> result True (DefinedOn evidence)
+              Refuted evidence -> result False (DefinedOn evidence)
+              Unknown          -> Unknown
+          Left _ -> Unknown
+    | Atom p expression <- condition, needsDefinedValue p =
+        case infer context (defined expression) of
+          Refuted evidence -> result False (UndefinedValue evidence)
+          _                -> Unknown
     | otherwise = Unknown
   where
     result truth reason
@@ -267,16 +356,27 @@ checkEvidence context@(Context interpretation hypotheses) condition truth
               c : _ -> checkEvidence context c False evidence
               []    -> False
           _ -> False
+      DefinedOn evidence -> case condition of
+          Atom IsDefined expression -> case domainOf context expression of
+              Right domain -> checkEvidence context domain truth evidence
+              Left _       -> False
+          _ -> False
+      UndefinedValue evidence -> case condition of
+          Atom p expression | not truth, needsDefinedValue p ->
+              checkEvidence context (defined expression) False evidence
+          _ -> False
 
 -- | The explicit hypotheses referenced by evidence, possibly with duplicates.
 -- Facts established directly from the interpretation require no hypotheses.
 -- Replay requires these propositions to remain available in the context.
 assumptionsUsed :: Evidence a -> [Condition a]
 assumptionsUsed (Evidence _ _ _ reason) = case reason of
-    Elementary            -> []
-    Hypothesis hypothesis -> [hypothesis]
-    AllProved evidence    -> concatMap assumptionsUsed evidence
-    OneRefuted _ evidence -> assumptionsUsed evidence
+    Elementary              -> []
+    Hypothesis hypothesis   -> [hypothesis]
+    AllProved evidence      -> concatMap assumptionsUsed evidence
+    OneRefuted _ evidence   -> assumptionsUsed evidence
+    DefinedOn evidence      -> assumptionsUsed evidence
+    UndefinedValue evidence -> assumptionsUsed evidence
 
 implies :: (Eq a, IsConst a) => Condition a -> Condition a -> Bool
 implies (Atom p x) (Atom q y) = sameExp x y && propertyImplies p q
@@ -291,6 +391,11 @@ propertyImplies IsPositive    IsDefined     = True
 propertyImplies IsNonNegative IsDefined     = True
 propertyImplies IsNonZero     IsDefined     = True
 propertyImplies _             _             = False
+
+-- Definedness has its own rule. Enumerate the other predicates whose truth
+-- requires a value, rather than giving every future predicate this premise.
+needsDefinedValue :: Property -> Bool
+needsDefinedValue p = p `elem` [IsNonZero, IsPositive, IsNonNegative]
 
 sameCondition :: (Eq a, IsConst a) => Condition a -> Condition a -> Bool
 sameCondition (Boolean x) (Boolean y) = x == y

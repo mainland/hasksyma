@@ -120,13 +120,27 @@ change construction, numerical evaluation, or ordinary simplification.
 
 Build propositions with `defined`, `nonZero`, `positive`, `nonNegative`, and
 `allOf`. Query them with `decide`, which returns `Proved`, `Refuted`, or
-`Unknown`. Unsupported syntax is a separate error. The initial checker handles
-exact leaf facts, explicit assumptions, and elementary implications such as
-positivity implying nonzero. It does not infer general compound-expression
-facts or establish that an accepted set of assumptions is consistent.
+`Unknown`. Unsupported syntax is a separate error. The checker handles exact
+leaf facts, explicit assumptions, elementary implications such as positivity
+implying nonzero, and structural definedness. It does not infer general signs
+of compound expressions or establish that an accepted set of assumptions is
+consistent.
 
 Use `checkDecision` to replay evidence against a particular context and claim,
 and `assumptionsUsed` to inspect its explicit dependencies. Use `viewCondition`
 to inspect or render propositions without evaluating their expressions. These
 checks are local rule checks, not external proof-assistant validation. See the
 module's Haddock documentation for the supported syntax and interpretation.
+
+Use `domainOf` to compute the exact definedness condition of a supported
+expression. For example, the domain of `recip x` is `nonZero x`. Products by
+zero and powers with exponent zero retain their operands' domain restrictions.
+Context assumptions do not erase these restrictions from the returned condition.
+Analysis sees the supplied expression and cannot recover syntax already removed
+by construction or simplification.
+
+`checkDomain` recomputes the normalized domain and compares it structurally with
+a proposed condition. It can reject a logically equivalent condition with a
+different representation. It also rejects merely sufficient conditions, such
+as proposing `positive x` as the complete domain of `recip x`. Use `decide` to
+check whether a domain holds under the current assumptions.
