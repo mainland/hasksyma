@@ -155,6 +155,12 @@ cancelling `x/x` produces one while retaining `nonZero x` as its source domain.
 The same exclusion remains when reducing `0 * recip x` to zero. Extracting
 `value` alone loses that restriction.
 
+Checked quotient rules also reduce `0/u` to zero and cancel matching product
+factors: `(u*v)/u` becomes `v`, and `u/(u*v)` becomes `recip v`, including
+reversed factor orders. The original denominator exclusions remain in
+`sourceDomain`, together with any restrictions inside the operands. These rules
+add no obligations and retain obligations from earlier conditional steps.
+
 Checked simplification also reduces `sin(u)^2 + cos(u)^2` to one in either
 term order, with squares represented by `NatPowE` or `IntPowE`. The arguments
 must match structurally. If `u` is `recip x`, the result retains `nonZero x`

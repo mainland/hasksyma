@@ -49,6 +49,73 @@ checkedSimplifyTests = describe "Checked simplification" $ do
       expectNonZeroX (sourceDomain result)
       decision <- expectRight (decide (contextUsed result) (positive x))
       checkDecision (contextUsed result) (positive x) decision `shouldBe` True
+    describe "Checked denominator cancellation" $ do
+      it "cancels either numerator factor and retains its nonzero restriction" $
+        forM_ [NumBinopE Mul x y, NumBinopE Mul y x] $ \numerator -> do
+          let source = FracBinopE FDiv numerator x
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) y `shouldBe` True
+          expectNonZeroX (sourceDomain result)
+          expectTrue (obligations result)
+          checkSimplification source result `shouldBe` True
+      it "cancels either denominator factor while retaining the original product exclusion" $
+        forM_ [NumBinopE Mul x y, NumBinopE Mul y x] $ \denominator -> do
+          let source = FracBinopE FDiv x denominator
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) (FracUnopE Recip y) `shouldBe` True
+          case viewCondition (sourceDomain result) of
+            NonZeroView e -> sameExp e denominator `shouldBe` True
+            _             -> fail "Expected the original denominator exclusion"
+          expectTrue (obligations result)
+          checkSimplification source result `shouldBe` True
+      it "reduces exact zero numerators without erasing denominator exclusions" $
+        forM_ [IntegerC 0, RationalC 0, Pi 0] $ \zero -> do
+          let source = FracBinopE FDiv (ConstE zero) x
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) (ConstE (IntegerC 0)) `shouldBe` True
+          expectNonZeroX (sourceDomain result)
+          expectTrue (obligations result)
+          checkSimplification source result `shouldBe` True
+      it "retains nested singularities through cancellation and continuation" $ do
+        let inverse = FracUnopE Recip x
+            quotient = FracBinopE FDiv (NumBinopE Mul y inverse) y
+            source = NumBinopE Sub quotient inverse
+        pending <- expectRight (simplifyChecked 1 context source)
+        sameExp (value pending) (NumBinopE Sub inverse inverse) `shouldBe` True
+        completion pending `shouldBe` BudgetExhausted
+        checkSimplification source pending `shouldBe` True
+        result <- expectRight (continueChecked 1 pending)
+        sameExp (value result) (ConstE (IntegerC 0)) `shouldBe` True
+        case viewCondition (sourceDomain result) of
+          ConjunctionView [dx, dy] -> do
+            expectNonZeroX dx
+            case viewCondition dy of
+              NonZeroView e -> sameExp e y `shouldBe` True
+              _             -> fail "Expected the cancelled factor exclusion"
+          _ -> fail "Expected both original exclusions"
+        checkSimplification source result `shouldBe` True
+      it "retains conditional obligations when a later denominator factor cancels" $ do
+        let source = FracBinopE FDiv (NumBinopE Mul (NumUnopE Abs x) y) x
+        pending <- expectRight (simplifyConditional 1 context source)
+        result <- expectRight (continueChecked 1 pending)
+        sameExp (value result) y `shouldBe` True
+        expectNonZeroX (sourceDomain result)
+        expectNonNegative x (obligations result)
+        checkSimplification source result `shouldBe` True
+      it "leaves mismatched factors intact" $
+        forM_ [FracBinopE FDiv (NumBinopE Mul x x) y,
+               FracBinopE FDiv x (NumBinopE Mul y y)] $ \source -> do
+          result <- expectRight (simplifyChecked 1 context source)
+          sameExp (value result) source `shouldBe` True
+          completion result `shouldBe` NoApplicableRule
+          checkSimplification source result `shouldBe` True
+      it "validates all operands and rejects known zero denominators before cancellation" $ do
+        forM_ [FracBinopE FDiv (ConstE (IntegerC 0)) (ConstE (IntegerC 0)),
+               FracBinopE FDiv (NumBinopE Mul Undefined x) x] $ \source ->
+          failure (simplifyChecked 1 context source) `shouldBe` Just EmptySourceDomain
+        let unsupported = FracBinopE FDiv (ConstE (IntegerC 0)) (FloatUnopE Log x)
+        failure (simplifyChecked 1 context unsupported)
+          `shouldBe` Just (ConditionFailure UnsupportedOperation)
     describe "Proved absolute-value rewrites" $ do
       it "uses a nonnegative assumption or its positive strengthening" $
         forM_ [nonNegative x, positive x] $ \premise -> do
@@ -593,4 +660,7 @@ certificateTests = describe "Public simplification certificates" $ do
       , (CancelReciprocals, FracUnopE Recip (FracUnopE Recip x), x)
       , (PythagoreanIdentity, NumBinopE Add (NatPowE (FloatUnopE Sin x) 2)
                                            (NatPowE (FloatUnopE Cos x) 2), one)
+      , (ZeroQuotient, FracBinopE FDiv zero x, zero)
+      , (CancelProductNumerator, FracBinopE FDiv (NumBinopE Mul x y) x, y)
+      , (CancelProductDenominator, FracBinopE FDiv x (NumBinopE Mul x y), FracUnopE Recip y)
       ]

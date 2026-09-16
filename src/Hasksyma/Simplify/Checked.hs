@@ -16,6 +16,11 @@
 -- must belong to the real fragment supported by 'domainOf'. No traversal crosses
 -- a calculus node or unsupported operation, and no legacy simplifier is called.
 --
+-- Quotient rules cancel a matching factor on either side of a product and
+-- reduce exact zero numerators. Retain all original denominator exclusions,
+-- including those inside operands. No additional nonzero obligation is needed
+-- on the original domain.
+--
 -- Checked simplification reduces @abs(u)@ to @u@ when 'decide' proves
 -- 'nonNegative' @u@ in the recorded context. Explicit conditional simplification
 -- can instead introduce that requirement when its truth is unknown. Replay
@@ -121,6 +126,9 @@ data Rule a
     | NonNegativeAbs (Evidence a) -- ^ @abs u = u@ with replayable nonnegativity evidence.
     | AssumeNonNegativeAbs      -- ^ @abs u = u@ while declaring a new nonnegativity obligation.
     | UseNonNegativeAbs         -- ^ @abs u = u@ using an earlier declared obligation.
+    | ZeroQuotient              -- ^ @0/u = 0@ on the original quotient domain.
+    | CancelProductNumerator    -- ^ Cancel either matching numerator factor.
+    | CancelProductDenominator  -- ^ Cancel either matching denominator factor.
     deriving (Show)
 
 data RewriteMode = PreserveDomain | AllowConditions
@@ -308,6 +316,13 @@ nextRule (NumBinopE Sub x y)
     | sameExp x y = pure (CancelDifference, ConstE (IntegerC 0))
 nextRule (FracBinopE FDiv x y)
     | sameExp x y = pure (CancelQuotient, ConstE (IntegerC 1))
+    | isExactZero x = pure (ZeroQuotient, ConstE (IntegerC 0))
+nextRule (FracBinopE FDiv (NumBinopE Mul x y) z)
+    | sameExp x z = pure (CancelProductNumerator, y)
+    | sameExp y z = pure (CancelProductNumerator, x)
+nextRule (FracBinopE FDiv z (NumBinopE Mul x y))
+    | sameExp x z = pure (CancelProductDenominator, FracUnopE Recip y)
+    | sameExp y z = pure (CancelProductDenominator, FracUnopE Recip x)
 nextRule (NumBinopE Add x y)
     | opposites x y = pure (CancelOpposites, ConstE (IntegerC 0))
     | trigIdentity x y = pure (PythagoreanIdentity, ConstE (IntegerC 1))
@@ -416,6 +431,13 @@ checkRule _ _ CancelDifference (NumBinopE Sub x y) after =
     sameExp x y && sameExp after (ConstE (IntegerC 0))
 checkRule _ _ CancelQuotient (FracBinopE FDiv x y) after =
     sameExp x y && sameExp after (ConstE (IntegerC 1))
+checkRule _ _ ZeroQuotient (FracBinopE FDiv x _) after =
+    isExactZero x && sameExp after (ConstE (IntegerC 0))
+checkRule _ _ CancelProductNumerator (FracBinopE FDiv (NumBinopE Mul x y) z) after =
+    (sameExp x z && sameExp after y) || (sameExp y z && sameExp after x)
+checkRule _ _ CancelProductDenominator (FracBinopE FDiv z (NumBinopE Mul x y)) after =
+    (sameExp x z && sameExp after (FracUnopE Recip y)) ||
+    (sameExp y z && sameExp after (FracUnopE Recip x))
 checkRule _ _ CancelOpposites (NumBinopE Add x y) after =
     opposites x y && sameExp after (ConstE (IntegerC 0))
 checkRule _ _ ZeroProduct (NumBinopE Mul x y) after =
