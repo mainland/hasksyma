@@ -13,7 +13,7 @@ import           Data.Complex              (Complex)
 import           Test.Hspec                (Spec, describe, it, shouldBe)
 
 import           Hasksyma.Condition
-import           Hasksyma.Const            (Const (..))
+import           Hasksyma.Const            (Const (..), IsConst)
 import           Hasksyma.Exp
 import           Hasksyma.Simplify.Checked
 
@@ -102,6 +102,110 @@ checkedSimplifyTests = describe "Checked simplification" $ do
         sameExp (value result) (ConstE (IntegerC 0)) `shouldBe` True
         expectTrue (obligations result)
         checkSimplification source result `shouldBe` True
+    describe "Conditional absolute-value rewrites" $ do
+      it "records an unknown sign separately from the source domain and context" $ do
+        let source = NumUnopE Abs x
+        result <- expectRight (simplifyConditional 1 context source)
+        sameExp (value result) x `shouldBe` True
+        expectTrue (sourceDomain result)
+        expectNonNegative x (obligations result)
+        decision <- expectRight (decide (contextUsed result) (nonNegative x))
+        case decision of
+          Unknown -> pure ()
+          _       -> fail "An obligation must not become a caller assumption"
+        checkSimplification source result `shouldBe` True
+      it "uses proved premises without additional obligations" $
+        forM_ [nonNegative x, positive x] $ \premise -> do
+          assumptions <- expectRight (assuming premise context)
+          let source = NumUnopE Abs x
+          result <- expectRight (simplifyConditional 1 assumptions source)
+          sameExp (value result) x `shouldBe` True
+          expectTrue (obligations result)
+          checkSimplification source result `shouldBe` True
+      it "does not introduce a refuted sign requirement" $ do
+        let source = NumUnopE Abs (ConstE (IntegerC (-1)))
+        result <- expectRight (simplifyConditional 1 context source)
+        sameExp (value result) source `shouldBe` True
+        expectTrue (obligations result)
+        completion result `shouldBe` NoApplicableRule
+        checkSimplification source result `shouldBe` True
+      it "keeps exact source exclusions separate from sufficient sign obligations" $ do
+        let inverse = FracUnopE Recip x
+            source = NumUnopE Abs inverse
+        result <- expectRight (simplifyConditional 1 context source)
+        sameExp (value result) inverse `shouldBe` True
+        expectNonZeroX (sourceDomain result)
+        expectNonNegative inverse (obligations result)
+        checkSimplification source result `shouldBe` True
+      it "adds no obligations when the budget prevents a conditional step" $ do
+        let source = NumUnopE Abs x
+        pending <- expectRight (simplifyConditional 0 context source)
+        sameExp (value pending) source `shouldBe` True
+        expectTrue (obligations pending)
+        completion pending `shouldBe` BudgetExhausted
+        checkSimplification source pending `shouldBe` True
+        result <- expectRight (continueChecked 1 pending)
+        sameExp (value result) source `shouldBe` True
+        expectTrue (obligations result)
+        completion result `shouldBe` NoApplicableRule
+        checkSimplification source result `shouldBe` True
+      it "reuses an existing obligation in a checked continuation without duplication" $ do
+        let source = NumBinopE Add (NumUnopE Abs x) (NumUnopE Abs x)
+        pending <- expectRight (simplifyConditional 1 context source)
+        sameExp (value pending) (NumBinopE Add x (NumUnopE Abs x)) `shouldBe` True
+        expectNonNegative x (obligations pending)
+        completion pending `shouldBe` BudgetExhausted
+        checkSimplification source pending `shouldBe` True
+        result <- expectRight (continueChecked 1 pending)
+        sameExp (value result) (NumBinopE Add x x) `shouldBe` True
+        expectNonNegative x (obligations result)
+        completion result `shouldBe` NoApplicableRule
+        checkSimplification source result `shouldBe` True
+      it "requires conditional continuation to add a distinct obligation" $ do
+        let source = NumBinopE Add (NumUnopE Abs x) (NumUnopE Abs y)
+        pending <- expectRight (simplifyConditional 1 context source)
+        checked <- expectRight (continueChecked 2 pending)
+        sameExp (value checked) (NumBinopE Add x (NumUnopE Abs y)) `shouldBe` True
+        expectNonNegative x (obligations checked)
+        completion checked `shouldBe` NoApplicableRule
+        checkSimplification source checked `shouldBe` True
+        result <- expectRight (continueConditional 1 checked)
+        sameExp (value result) (NumBinopE Add x y) `shouldBe` True
+        case viewCondition (obligations result) of
+          ConjunctionView [hx, hy] -> do
+            expectNonNegative x hx
+            expectNonNegative y hy
+          _ -> fail "Expected both obligations in declaration order"
+        checkSimplification source result `shouldBe` True
+      it "retains obligations and source exclusions after the value becomes constant" $ do
+        let inverse = FracUnopE Recip x
+            operand = NumUnopE Abs inverse
+            source = NumBinopE Sub operand operand
+        pending <- expectRight (simplifyConditional 1 context source)
+        result <- expectRight (continueChecked 2 pending)
+        sameExp (original result) source `shouldBe` True
+        sameExp (value result) (ConstE (IntegerC 0)) `shouldBe` True
+        expectNonZeroX (sourceDomain result)
+        expectNonNegative inverse (obligations result)
+        checkSimplification source result `shouldBe` True
+      it "can explicitly narrow a previously completed checked result" $ do
+        let source = NumUnopE Abs x
+        checked <- expectRight (simplifyChecked 1 context source)
+        completion checked `shouldBe` NoApplicableRule
+        result <- expectRight (continueConditional 1 checked)
+        sameExp (value result) x `shouldBe` True
+        expectNonNegative x (obligations result)
+        checkSimplification source result `shouldBe` True
+      it "validates the entire input before introducing any condition" $ do
+        let source = NumBinopE Add (NumUnopE Abs x) (FloatUnopE Log y)
+        failure (simplifyConditional 1 context source)
+          `shouldBe` Just (ConditionFailure UnsupportedOperation)
+        failure (simplifyConditional 1 context (NumUnopE Abs Undefined))
+          `shouldBe` Just EmptySourceDomain
+      it "rejects negative conditional budgets" $ do
+        failure (simplifyConditional (-1) context x) `shouldBe` Just InvalidBudget
+        result <- expectRight (simplifyConditional 0 context x)
+        failure (continueConditional (-1) result) `shouldBe` Just InvalidBudget
     describe "Checked trigonometric identity" $ do
       it "handles both term orders and integral square encodings" $
         forM_ [(`NatPowE` 2), (`IntPowE` 2)] $ \squareSin ->
@@ -368,6 +472,11 @@ expectTrue condition = case viewCondition condition of
     TruthView True -> pure ()
     _              -> fail "Expected no additional restriction"
 
+expectNonNegative :: (Eq a, IsConst a) => Exp a -> Condition a -> IO ()
+expectNonNegative expected condition = case viewCondition condition of
+    NonNegativeView e -> sameExp e expected `shouldBe` True
+    _                 -> fail "Expected a nonnegativity obligation"
+
 -- Exercise only the public certificate API, including caller-built claims.
 certificateTests :: Spec
 certificateTests = describe "Public simplification certificates" $ do
@@ -397,6 +506,7 @@ certificateTests = describe "Public simplification certificates" $ do
              result { derivation = Derivation [] }] $ \bad -> do
         checkSimplification source bad `shouldBe` False
         failure (continueChecked 1 bad) `shouldBe` Just InvalidSimplification
+        failure (continueConditional 1 bad) `shouldBe` Just InvalidSimplification
     it "rejects a mismatched rule even when the final expression is correct" $ do
       let source = FracBinopE FDiv x x
       result <- candidate source one (Derivation [Step [] CancelDifference source one])
@@ -418,6 +528,27 @@ certificateTests = describe "Public simplification certificates" $ do
           forM_ [[first], [second], [second, first], [first, first, second]] $ \steps ->
             checkSimplification source (result { derivation = Derivation steps }) `shouldBe` False
         _ -> fail "Expected two difference cancellations"
+    it "rejects missing obligations and reuse before declaration" $ do
+      let source = NumUnopE Abs x
+      result <- expectRight (simplifyConditional 1 context source)
+      checkSimplification source (result { obligations = trueCondition }) `shouldBe` False
+      checkSimplification source (result
+        { derivation = Derivation [Step [] UseNonNegativeAbs source x] }) `shouldBe` False
+    it "replays obligation reuse and rejects reuse for a different operand" $ do
+      let source = NumBinopE Add (NumUnopE Abs x) (NumUnopE Abs x)
+          middle = NumBinopE Add x (NumUnopE Abs x)
+          target = NumBinopE Add x x
+          proof = Derivation [Step [LeftOperand] AssumeNonNegativeAbs source middle,
+                              Step [RightOperand] UseNonNegativeAbs middle target]
+      result <- candidate source target proof
+      checkSimplification source (result { obligations = nonNegative x }) `shouldBe` True
+      let otherSource = NumBinopE Add (NumUnopE Abs x) (NumUnopE Abs y)
+          otherMiddle = NumBinopE Add x (NumUnopE Abs y)
+          otherTarget = NumBinopE Add x y
+          otherProof = Derivation [Step [LeftOperand] AssumeNonNegativeAbs otherSource otherMiddle,
+                                   Step [RightOperand] UseNonNegativeAbs otherMiddle otherTarget]
+      other <- candidate otherSource otherTarget otherProof
+      checkSimplification otherSource (other { obligations = nonNegative x }) `shouldBe` False
     it "binds premise evidence to its actual operand and recorded context" $ do
       positiveContext <- expectRight (assuming (positive x) context)
       decision <- expectRight (decide positiveContext (nonNegative x))

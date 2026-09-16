@@ -168,10 +168,25 @@ or nonzero alone does not establish the required sign. The result retains its
 source domain and introduces no additional obligations. Replay checks the
 stored evidence against the operand and the recorded context.
 
+`simplifyConditional` uses the same engine but can reduce `abs u` when its sign
+is unknown by recording `nonNegative u` in `obligations`. It keeps this new
+requirement separate from the exact source domain and leaves the caller's
+context unchanged. Proved premises need no new obligation, and refuted premises
+leave the absolute value intact.
+
+The result applies only where its source domain and obligations hold. These
+obligations are sufficient requirements, not necessarily minimal or jointly
+satisfiable. Child rewrites may add conditions before a parent cancellation
+that could have avoided them. Discharge the obligations or retain them when
+using the replacement.
+
 The budget counts individual rewrites across the tree. Traversal visits children
 before their parents and left children before right children. `completion`
-reports whether an implemented rule remains applicable. Use `continueChecked`
-to extend a result while retaining its original source and restrictions.
+reports whether a rule permitted by the requested mode remains applicable.
+Use `continueChecked` to extend a result while retaining its original source
+and restrictions. It can reuse previously declared obligations but adds none.
+Use `continueConditional` to permit new obligations. Exhausting the budget
+before a conditional step adds no obligation for that step.
 Unsupported syntax and known empty source domains are rejected, including with
 a zero budget. Unknown domain satisfiability is allowed.
 
@@ -184,13 +199,14 @@ operand or power base, and `LeftOperand` and `RightOperand` select binary operan
 Construction and record updates establish no validity. Use
 `checkSimplification source result` to replay a candidate against the intended
 source. Replay checks its source domain, rewrite chain, premise evidence,
-enclosing operators, and unaffected operands. Additional `obligations` must be
-true in this initial engine. Continuation replays the supplied result before
-extending it and rejects claims that fail replay.
+enclosing operators, and unaffected operands. It checks obligation declarations
+in order, permits reuse only after declaration, and requires the recorded
+obligations to match those declarations. Both continuation functions replay the
+supplied result before extending it and reject claims that fail replay.
 
 Replay uses `contextUsed result`. The caller must establish that this is the
 intended context and inspect the conclusion and restrictions. A successful local
 check is separate from acceptance by Lean or another proof assistant. It does
-not establish that the source domain is inhabited. `completion` is a search
-report and is not checked by replay. Derived `Show` output is diagnostic, not
-a certificate serialization format.
+not establish that the source domain is inhabited or that the obligations hold.
+`completion` is a search report and is not checked by replay. Derived `Show`
+output is diagnostic, not a certificate serialization format.

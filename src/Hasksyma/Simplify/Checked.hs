@@ -16,10 +16,11 @@
 -- must belong to the real fragment supported by 'domainOf'. No traversal crosses
 -- a calculus node or unsupported operation, and no legacy simplifier is called.
 --
--- Reduce @abs(u)@ to @u@ only when 'decide' proves 'nonNegative' @u@ in the
--- recorded context. Store that premise evidence and replay it against the
--- actual operand. Unknown or refuted premises leave the absolute value intact.
--- This rule adds no obligations and does not infer positivity from nonzero.
+-- Checked simplification reduces @abs(u)@ to @u@ when 'decide' proves
+-- 'nonNegative' @u@ in the recorded context. Explicit conditional simplification
+-- can instead introduce that requirement when its truth is unknown. Replay
+-- checks premise evidence or the introduction and subsequent reuse of an
+-- obligation. Neither mode infers positivity from nonzero.
 --
 -- A result asserts equality under its recorded context, source domain, and
 -- additional obligations. Its value is defined on that region. Extracting the
@@ -40,6 +41,8 @@ module Hasksyma.Simplify.Checked
     Rule (..),
     simplifyChecked,
     continueChecked,
+    simplifyConditional,
+    continueConditional,
     checkSimplification,
   ) where
 
@@ -64,17 +67,17 @@ data CheckError
     | InvalidSimplification         -- ^ A continued result failed replay.
     deriving (Eq, Show)
 
--- | Search status, separate from validity of the completed derivation.
+-- | Search status in the requested mode, separate from derivation validity.
 data Completion
-    = NoApplicableRule -- ^ No implemented rule applies anywhere in the supported tree.
+    = NoApplicableRule -- ^ No rule permitted by the requested mode applies in the supported tree.
     | BudgetExhausted  -- ^ An applicable rule remains after the budget is consumed.
     deriving (Eq, Show)
 
 -- | A candidate restricted value and its provenance. Public fields permit
 -- construction, inspection, and record updates. Neither construction nor the
 -- type itself establishes validity. Use 'checkSimplification' to replay the
--- claim against the intended source under 'contextUsed'. 'continueChecked'
--- replays the supplied claim before extending its derivation.
+-- claim against the intended source under 'contextUsed'. Both continuation
+-- operations replay the supplied claim before extending its derivation.
 --
 -- The derived 'Show' output uses record syntax and remains diagnostic, not a
 -- serialization format.
@@ -89,7 +92,8 @@ data Simplification a = Simplification
       -- ^ The claimed exact original domain, including context-established exclusions.
     , obligations  :: Condition a
       -- ^ Additional sufficient requirements, separate from the source domain.
-      -- These remain true in the initial checked engine.
+      -- Fresh checked results have no additional requirements. Conditional
+      -- rewriting can add requirements, which both continuations retain.
     , derivation   :: Derivation a
       -- ^ The candidate chain from the original expression to the replacement.
     , completion   :: Completion
@@ -115,15 +119,22 @@ data Rule a
     | CancelReciprocals         -- ^ @recip (recip u) = u@ on the original domain.
     | PythagoreanIdentity       -- ^ @sin(u)^2 + cos(u)^2 = 1@, in either term order.
     | NonNegativeAbs (Evidence a) -- ^ @abs u = u@ with replayable nonnegativity evidence.
+    | AssumeNonNegativeAbs      -- ^ @abs u = u@ while declaring a new nonnegativity obligation.
+    | UseNonNegativeAbs         -- ^ @abs u = u@ using an earlier declared obligation.
     deriving (Show)
 
-newtype RewriteEnv a = RewriteEnv
-    { rewriteContext :: Context a
+data RewriteMode = PreserveDomain | AllowConditions
+    deriving (Eq)
+
+data RewriteEnv a = RewriteEnv
+    { rewriteContext      :: Context a
+    , rewriteMode         :: RewriteMode
+    , rewriteRequirements :: [Exp a]
     }
 
--- Discovery reads a fixed context and chooses the first successful
--- candidate. Only the driver records accepted steps, so failed
--- alternatives and budget probes cannot change the derivation.
+-- Discovery reads a fixed environment and chooses the first successful
+-- candidate. Only the driver records accepted steps and obligations, so failed
+-- alternatives and budget probes cannot change the result's evidence.
 newtype RewriteM a b = RewriteM (ReaderT (RewriteEnv a) Maybe b)
     deriving newtype (Functor, Applicative, Monad, Alternative)
 
@@ -135,6 +146,12 @@ liftMaybe = RewriteM . lift
 
 askRewriteContext :: RewriteM a (Context a)
 askRewriteContext = RewriteM (asks rewriteContext)
+
+askRewriteMode :: RewriteM a RewriteMode
+askRewriteMode = RewriteM (asks rewriteMode)
+
+askRewriteRequirements :: RewriteM a [Exp a]
+askRewriteRequirements = RewriteM (asks rewriteRequirements)
 
 -- | One edge in a path from the expression root to a local rewrite.
 -- Paths use only supported unary and binary operations. A power's base is its
@@ -163,23 +180,56 @@ data Step a = Step [Child] (Rule a) (Exp a) (Exp a)
 -- No additional hypotheses are introduced by this operation.
 simplifyChecked :: (Eq a, IsConst a)
                 => Int -> Context a -> Exp a -> Either CheckError (Simplification a)
-simplifyChecked budget context expression
+simplifyChecked = simplify PreserveDomain
+
+-- | Simplify with permission to introduce additional sufficient obligations.
+-- Currently, @abs(u)@ can become @u@ with a new 'nonNegative' @u@ obligation
+-- when its sign is unknown. Proved premises need no new obligation, and refuted
+-- premises leave the absolute value intact. The caller's context is unchanged.
+-- The budget and input validation follow 'simplifyChecked'. A candidate found
+-- after the budget is exhausted adds no obligation.
+--
+-- Obligations narrow the region covered by the result. They are not asserted
+-- to hold throughout the source domain, to be jointly satisfiable, or to be
+-- minimal. In particular, child rewrites can introduce obligations before a
+-- parent cancellation that could have avoided them. Discharge these conditions
+-- or retain them when using the replacement.
+simplifyConditional :: (Eq a, IsConst a)
+                    => Int -> Context a -> Exp a -> Either CheckError (Simplification a)
+simplifyConditional = simplify AllowConditions
+
+simplify :: (Eq a, IsConst a)
+         => RewriteMode -> Int -> Context a -> Exp a -> Either CheckError (Simplification a)
+simplify mode budget context expression
     | budget < 0 = Left InvalidBudget
     | otherwise = do
         domain <- conditionResult (domainOf context expression)
         requireDomain context domain
-        pure (run budget (Simplification context expression expression domain
+        pure (run mode budget (Simplification context expression expression domain
                           trueCondition (Derivation []) NoApplicableRule))
 
 -- | Continue a checked result with an additional rewrite budget. Replay the
 -- existing claim first and retain its context and full provenance. This never
--- recomputes the source domain from the replacement expression.
+-- recomputes the source domain from the replacement expression. Previously
+-- introduced obligations may be reused, but no new obligations are added.
 continueChecked :: (Eq a, IsConst a)
                 => Int -> Simplification a -> Either CheckError (Simplification a)
-continueChecked budget result
+continueChecked = continue PreserveDomain
+
+-- | Continue with permission to introduce new obligations, retaining all prior
+-- restrictions and replaying the existing claim first. Like 'simplifyConditional',
+-- this may narrow coverage further. Existing nonnegativity obligations are
+-- reused by structural operand identity, without a general assumptions solver.
+continueConditional :: (Eq a, IsConst a)
+                    => Int -> Simplification a -> Either CheckError (Simplification a)
+continueConditional = continue AllowConditions
+
+continue :: (Eq a, IsConst a)
+         => RewriteMode -> Int -> Simplification a -> Either CheckError (Simplification a)
+continue mode budget result
     | budget < 0 = Left InvalidBudget
     | not (checkSimplification (original result) result) = Left InvalidSimplification
-    | otherwise = Right (run budget result)
+    | otherwise = Right (run mode budget result)
 
 conditionResult :: Either ContextError b -> Either CheckError b
 conditionResult = either (Left . ConditionFailure) Right
@@ -191,18 +241,26 @@ requireDomain context domain = do
       Refuted _ -> Left EmptySourceDomain
       _         -> Right ()
 
-run :: (Eq a, IsConst a) => Int -> Simplification a -> Simplification a
-run budget (Simplification context source current domain hypotheses (Derivation steps) _) =
+run :: (Eq a, IsConst a) => RewriteMode -> Int -> Simplification a -> Simplification a
+run mode budget (Simplification context source current domain _ (Derivation steps) _) =
     case runRewriteM environment (nextRewrite current) of
       Nothing -> finish current steps NoApplicableRule
       Just (path, rule, next)
           | budget == 0 -> finish current steps BudgetExhausted
-          | otherwise   -> run (budget - 1)
+          | otherwise   -> run mode (budget - 1)
                                (finish next (steps ++ [Step path rule current next]) NoApplicableRule)
   where
-    environment = RewriteEnv context
+    environment = RewriteEnv context mode (concatMap requirements steps)
 
-    finish e proof = Simplification context source e domain hypotheses (Derivation proof)
+    finish e proof = Simplification context source e domain
+        (allOf (map nonNegative (concatMap requirements proof))) (Derivation proof)
+
+-- Only committed declaration steps contribute obligations. Continuation checks
+-- their replay before using them, and replay checks each declaration's shape.
+requirements :: Step a -> [Exp a]
+requirements (Step path AssumeNonNegativeAbs before _)
+    | Just (NumUnopE Abs x, _) <- focus path before = [x]
+requirements _ = []
 
 nextRewrite :: (Eq a, IsConst a)
             => Exp a -> RewriteM a ([Child], Rule a, Exp a)
@@ -244,7 +302,7 @@ focus (edge : path) expression = do
 -- Cancellation rules require their operands to have values on the original domain.
 -- Division and reciprocals supply nonzero requirements on that domain. Since
 -- the domain is retained, those rules need no new hypothesis or sign test.
--- Absolute-value removal instead records a proved nonnegativity premise.
+-- Absolute-value removal records premise evidence or a scoped obligation.
 nextRule :: (Eq a, IsConst a) => Exp a -> RewriteM a (Rule a, Exp a)
 nextRule (NumBinopE Sub x y)
     | sameExp x y = pure (CancelDifference, ConstE (IntegerC 0))
@@ -260,7 +318,18 @@ nextRule (NumUnopE Abs x) = do
     context <- askRewriteContext
     case decide context (nonNegative x) of
       Right (Proved evidence) -> pure (NonNegativeAbs evidence, x)
+      Right Unknown           -> useRequirement <|> introduceRequirement
       _                       -> empty
+  where
+    useRequirement = do
+        required <- askRewriteRequirements
+        guard (any (sameExp x) required)
+        pure (UseNonNegativeAbs, x)
+
+    introduceRequirement = do
+        mode <- askRewriteMode
+        guard (mode == AllowConditions)
+        pure (AssumeNonNegativeAbs, x)
 nextRule _ = empty
 
 opposites :: (Eq a, IsConst a) => Exp a -> Exp a -> Bool
@@ -292,9 +361,12 @@ isExactZero _                      = False
 -- | Replay a result against the intended original expression under the context
 -- returned by 'contextUsed'. This does not rebind a proof to another context.
 -- Check the exact domain and every rule's input, output, and position in the
--- chain. Replay premise evidence against the recorded context and its actual
--- claim without rerunning premise search. Obligations must be true for this
--- rule set. Completion status is a search report, not mathematical evidence.
+-- chain. Replay any premise evidence against the recorded context and its
+-- actual claim without rerunning premise search. Replay obligation declarations
+-- in order, allow reuse only after introduction, and check that the result's
+-- obligations match the declarations exactly. This verifies a conditional
+-- implication, not the truth of its obligations. Completion status is a search
+-- report and is not used as evidence of mathematical validity.
 -- This checks equality on the stated domain, not whether that domain is
 -- inhabited. Known empty domains are rejected when starting simplification.
 -- Public constructors and record updates may produce claims that fail replay.
@@ -306,38 +378,56 @@ checkSimplification :: (Eq a, IsConst a) => Exp a -> Simplification a -> Bool
 checkSimplification expected (Simplification context source target domain hypotheses proof _) = isJust $ do
     guard (sameExp expected source)
     guard (checkDomain context source domain)
-    case viewCondition hypotheses of
-      TruthView True -> replay source proof
-      _              -> Nothing
+    replay [] source proof
   where
-    replay e (Derivation []) = guard (sameExp e target)
-    replay e (Derivation (Step path rule before after : rest)) = do
+    replay required e (Derivation []) = do
+        guard (sameExp e target)
+        guard (matchesRequirements required hypotheses)
+    replay required e (Derivation (step@(Step path rule before after) : rest)) = do
         guard (sameExp e before)
-        checkAt context path rule before after
-        replay after (Derivation rest)
+        checkAt context required path rule before after
+        replay (required ++ requirements step) after (Derivation rest)
+
+-- Match precisely the normalized conjunction emitted by this rule set. Keep
+-- declaration order and reject missing, extra, or differently shaped claims.
+matchesRequirements :: (Eq a, IsConst a) => [Exp a] -> Condition a -> Bool
+matchesRequirements [] condition = case viewCondition condition of
+    TruthView True -> True
+    _              -> False
+matchesRequirements [x] condition = case viewCondition condition of
+    NonNegativeView y -> sameExp x y
+    _                 -> False
+matchesRequirements xs condition = case viewCondition condition of
+    ConjunctionView cs -> length xs == length cs && and (zipWith (matchesRequirements . pure) xs cs)
+    _                  -> False
 
 checkAt :: (Eq a, IsConst a)
-        => Context a -> [Child] -> Rule a -> Exp a -> Exp a -> Maybe ()
-checkAt context path rule before after = do
+        => Context a -> [Exp a] -> [Child] -> Rule a -> Exp a -> Exp a -> Maybe ()
+checkAt context required path rule before after = do
     (x, rebuild) <- focus path before
     (y, _) <- focus path after
-    guard (checkRule context rule x y)
+    guard (checkRule context required rule x y)
     guard (sameExp after (rebuild y))
 
 -- Validate each rule directly. Do not trust rule discovery or merely compare
 -- the final answers. These equations use mathematical real scalar semantics.
-checkRule :: (Eq a, IsConst a) => Context a -> Rule a -> Exp a -> Exp a -> Bool
-checkRule _ CancelDifference (NumBinopE Sub x y) after =
+checkRule :: (Eq a, IsConst a) => Context a -> [Exp a] -> Rule a -> Exp a -> Exp a -> Bool
+checkRule _ _ CancelDifference (NumBinopE Sub x y) after =
     sameExp x y && sameExp after (ConstE (IntegerC 0))
-checkRule _ CancelQuotient (FracBinopE FDiv x y) after =
+checkRule _ _ CancelQuotient (FracBinopE FDiv x y) after =
     sameExp x y && sameExp after (ConstE (IntegerC 1))
-checkRule _ CancelOpposites (NumBinopE Add x y) after =
+checkRule _ _ CancelOpposites (NumBinopE Add x y) after =
     opposites x y && sameExp after (ConstE (IntegerC 0))
-checkRule _ ZeroProduct (NumBinopE Mul x y) after =
+checkRule _ _ ZeroProduct (NumBinopE Mul x y) after =
     (isExactZero x || isExactZero y) && sameExp after (ConstE (IntegerC 0))
-checkRule _ CancelReciprocals (FracUnopE Recip (FracUnopE Recip x)) after = sameExp after x
-checkRule _ PythagoreanIdentity (NumBinopE Add x y) after =
+checkRule _ _ CancelReciprocals (FracUnopE Recip (FracUnopE Recip x)) after = sameExp after x
+checkRule _ _ PythagoreanIdentity (NumBinopE Add x y) after =
     trigIdentity x y && sameExp after (ConstE (IntegerC 1))
-checkRule context (NonNegativeAbs evidence) (NumUnopE Abs x) after =
+checkRule context _ (NonNegativeAbs evidence) (NumUnopE Abs x) after =
     sameExp after x && checkDecision context (nonNegative x) (Proved evidence)
-checkRule _ _ _ _ = False
+-- A declaration proves this local identity under its newly recorded premise.
+-- Do not rediscover or assert the premise during replay.
+checkRule _ _ AssumeNonNegativeAbs (NumUnopE Abs x) after = sameExp after x
+checkRule _ required UseNonNegativeAbs (NumUnopE Abs x) after =
+    sameExp after x && any (sameExp x) required
+checkRule _ _ _ _ _ = False
