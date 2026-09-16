@@ -27,6 +27,10 @@ mkdocs serve
 Use `mkdocs build --strict` to perform the same validation as CI and Read the
 Docs. Generated files are written to `site/` and are not tracked.
 
+See the [changelog](CHANGELOG.md) for notable changes and migration guidance.
+The guide explains [simplification and domains](docs/getting-started.md#simplification-and-domains),
+including when to use checked simplification to retain exclusions.
+
 ## Build and test
 
 Build the reusable core library:

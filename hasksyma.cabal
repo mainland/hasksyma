@@ -1,10 +1,10 @@
 cabal-version:      3.4
 name:               hasksyma
-version:            0.1
+version:            0.1.0.0
 synopsis:           Symbolic expressions
 description:        Symbolic expressions.
-stability:          alpha
 homepage:           https://github.com/mainland/hasksyma
+bug-reports:        https://github.com/mainland/hasksyma/issues
 license:            BSD-3-Clause
 license-file:       LICENSE
 author:             Geoffrey Mainland <mainland@drexel.edu>
@@ -13,6 +13,7 @@ copyright:          (c) 2023 Drexel University
 category:           Language
 build-type:         Simple
 extra-doc-files:
+  CHANGELOG.md
   README.md
   docs/configuration.md
   docs/development.md
