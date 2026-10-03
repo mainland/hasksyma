@@ -694,7 +694,7 @@ instance (PrettyTeX a, Num a, Eq a, IsConst a) => PrettyTeX (Exp a) where
 
     tpprPrec p (FloatBinopE LogBase e1 e2) =
         autoParensIf (p > appPrec) $
-        (commS "log" !: tppr e1) <> braces (tpprPrec appPrec1 e2)
+        comm1 "mathop" (commS "log" !: tppr e1) <> braces (tpprPrec appPrec1 e2)
 
     tpprPrec p (DiffE e x) =
         autoParensIf (p > addPrec) $
