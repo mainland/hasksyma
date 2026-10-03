@@ -70,6 +70,7 @@ library
 
   exposed-modules:
     Hasksyma
+    Hasksyma.Condition
     Hasksyma.Const
     Hasksyma.Diff
     Hasksyma.Eval
@@ -78,6 +79,7 @@ library
     Hasksyma.LaTeX
     Hasksyma.Pretty
     Hasksyma.Simplify
+    Hasksyma.Simplify.Checked
 
   build-depends:
     base            >= 4.20  && < 4.23,
@@ -85,6 +87,7 @@ library
     mainland-pretty >= 0.7   && < 0.8,
     symbol          >= 0.2.4 && < 0.3,
     text            >= 1.2   && < 2.2,
+    transformers    >= 0.6   && < 0.7,
     HaTeX           >= 3.21  && < 3.24
 
   if flag(cyclotomic)
@@ -124,6 +127,7 @@ test-suite full
 
   other-modules:
     Test.Arbitrary
+    Test.Condition
     Test.Const
     Test.Diff
     Test.Eval
@@ -133,6 +137,7 @@ test-suite full
     Test.PEval
     Test.Root
     Test.Simplify
+    Test.Simplify.Checked
 
   build-depends:
     hasksyma,

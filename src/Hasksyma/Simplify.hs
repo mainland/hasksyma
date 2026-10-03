@@ -44,6 +44,8 @@ import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), Fra
 -- domain conditions or proof and does not preserve IEEE rounding, overflow,
 -- or nonfinite evaluation.
 -- Some rule families below remain more conservative.
+-- Use "Hasksyma.Simplify.Checked" for supported mathematical real rewrites
+-- with retained source domains and replayable derivations.
 --
 -- Logarithm sums and differences are not combined into logarithms of products
 -- or quotients. Such transformations require domain and branch conditions

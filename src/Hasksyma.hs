@@ -15,7 +15,8 @@
 -- True
 
 module Hasksyma
-  ( module Hasksyma.Const,
+  ( module Hasksyma.Condition,
+    module Hasksyma.Const,
     module Hasksyma.Diff,
     module Hasksyma.Eval,
     module Hasksyma.Exp,
@@ -23,9 +24,11 @@ module Hasksyma
     module Hasksyma.LaTeX,
     module Hasksyma.Pretty,
     module Hasksyma.Simplify,
+    module Hasksyma.Simplify.Checked,
   )
 where
 
+import           Hasksyma.Condition
 import           Hasksyma.Const
 import           Hasksyma.Diff
 import           Hasksyma.Eval
@@ -34,3 +37,4 @@ import           Hasksyma.Integrate
 import           Hasksyma.LaTeX
 import           Hasksyma.Pretty
 import           Hasksyma.Simplify
+import           Hasksyma.Simplify.Checked

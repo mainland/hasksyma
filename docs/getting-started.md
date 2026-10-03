@@ -109,3 +109,127 @@ can occur when simplifying a derivative formula.
 Construction and `evalexact` retain unknown quotients, opposite terms, and zero
 products. This preserves the source syntax for callers that need to inspect its
 domain before choosing a simplification operation.
+
+## Mathematical contexts and conditions
+
+`Hasksyma.Condition`, also re-exported by `Hasksyma`, provides explicit
+mathematical contexts. Start with `emptyContext realScalars` and use `assuming`
+to add hypotheses. The interpretation assigns mathematical real meanings to
+supported expressions independently of their numerical carrier. It does not
+change construction, numerical evaluation, or ordinary simplification.
+
+Build propositions with `defined`, `nonZero`, `positive`, `nonNegative`, and
+`allOf`. Query them with `decide`, which returns `Proved`, `Refuted`, or
+`Unknown`. Unsupported syntax is a separate error. The checker handles exact
+leaf facts, explicit assumptions, elementary implications such as positivity
+implying nonzero, and structural definedness. It does not infer general signs
+of compound expressions or establish that an accepted set of assumptions is
+consistent.
+
+Use `checkDecision` to replay evidence against a particular context and claim,
+and `assumptionsUsed` to inspect its explicit dependencies. Use `viewCondition`
+to inspect or render propositions without evaluating their expressions. These
+checks are local rule checks, not external proof-assistant validation. See the
+module's Haddock documentation for the supported syntax and interpretation.
+
+Use `domainOf` to compute the exact definedness condition of a supported
+expression. For example, the domain of `recip x` is `nonZero x`. Products by
+zero and powers with exponent zero retain their operands' domain restrictions.
+Context assumptions do not erase these restrictions from the returned condition.
+Analysis sees the supplied expression and cannot recover syntax already removed
+by construction or simplification.
+
+`checkDomain` recomputes the normalized domain and compares it structurally with
+a proposed condition. It can reject a logically equivalent condition with a
+different representation. It also rejects merely sufficient conditions, such
+as proposing `positive x` as the complete domain of `recip x`. Use `decide` to
+check whether a domain holds under the current assumptions.
+
+## Checked simplification and certificates
+
+`simplifyChecked budget context expression` returns a restricted value with its
+original source, context, exact source domain, and derivation. It cancels
+identical differences and quotients, opposite terms, zero products, and nested
+reciprocals throughout the supported real expression tree. For example,
+cancelling `x/x` produces one while retaining `nonZero x` as its source domain.
+The same exclusion remains when reducing `0 * recip x` to zero. Extracting
+`value` alone loses that restriction.
+
+Checked quotient rules also reduce `0/u` to zero and cancel matching product
+factors: `(u*v)/u` becomes `v`, and `u/(u*v)` becomes `recip v`, including
+reversed factor orders. The original denominator exclusions remain in
+`sourceDomain`, together with any restrictions inside the operands. These rules
+add no obligations and retain obligations from earlier conditional steps.
+
+Quotients of integral powers with structurally identical bases subtract their
+exponents. Natural powers, signed powers, reciprocals, and bare bases participate
+in this rule. For example, `x^2 / x^5` becomes `IntPowE x (-3)` while retaining
+the original denominator exclusion. Subtraction uses signed arithmetic, even
+for natural exponents. Differences of zero and one produce one and the base
+respectively. Other differences use `IntPowE`. The rule retains the exact source
+domain and adds no obligations.
+
+Products of integral powers with the same base add exponents, and nested
+integral powers multiply exponents. For example, `x^(-2) * x^2` becomes one
+restricted to `nonZero x`. Likewise, `(x^(-2))^0` becomes one while retaining
+the inner power's restriction. Natural-only products and nesting use `NatPowE`
+and work with a `Num` carrier. Signed or reciprocal forms use `IntPowE`.
+Result exponents zero and one reduce to one and the base. These rules retain
+source domains and existing obligations. Single power layers stay unchanged,
+and fractional or general floating powers remain unsupported.
+
+Checked simplification also reduces `sin(u)^2 + cos(u)^2` to one in either
+term order, with squares represented by `NatPowE` or `IntPowE`. The arguments
+must match structurally. If `u` is `recip x`, the result retains `nonZero x`
+as its source domain. This is a mathematical real identity and does not promise
+identical floating-point evaluation.
+
+To reduce `abs u` to `u`, checked simplification requires evidence that `u` is
+nonnegative in the recorded context. An explicit nonnegative or positive
+assumption can supply this evidence, as can an exact constant fact. Definedness
+or nonzero alone does not establish the required sign. The result retains its
+source domain and introduces no additional obligations. Replay checks the
+stored evidence against the operand and the recorded context.
+
+`simplifyConditional` uses the same engine but can reduce `abs u` when its sign
+is unknown by recording `nonNegative u` in `obligations`. It keeps this new
+requirement separate from the exact source domain and leaves the caller's
+context unchanged. Proved premises need no new obligation, and refuted premises
+leave the absolute value intact.
+
+The result applies only where its source domain and obligations hold. These
+obligations are sufficient requirements, not necessarily minimal or jointly
+satisfiable. Child rewrites may add conditions before a parent cancellation
+that could have avoided them. Discharge the obligations or retain them when
+using the replacement.
+
+The budget counts individual rewrites across the tree. Traversal visits children
+before their parents and left children before right children. `completion`
+reports whether a rule permitted by the requested mode remains applicable.
+Use `continueChecked` to extend a result while retaining its original source
+and restrictions. It can reuse previously declared obligations but adds none.
+Use `continueConditional` to permit new obligations. Exhausting the budget
+before a conditional step adds no obligation for that step.
+Unsupported syntax and known empty source domains are rejected, including with
+a zero budget. Unknown domain satisfiability is allowed.
+
+`Simplification` is a public record. `Derivation`, `Step`, `Child`, and `Rule`
+expose constructors for inspecting or building candidate certificates. A step
+contains a path to the local rewrite, its rule, and the whole expression before
+and after the step. The empty path selects the root. `Operand` selects a unary
+operand or power base, and `LeftOperand` and `RightOperand` select binary operands.
+
+Construction and record updates establish no validity. Use
+`checkSimplification source result` to replay a candidate against the intended
+source. Replay checks its source domain, rewrite chain, premise evidence,
+enclosing operators, and unaffected operands. It checks obligation declarations
+in order, permits reuse only after declaration, and requires the recorded
+obligations to match those declarations. Both continuation functions replay the
+supplied result before extending it and reject claims that fail replay.
+
+Replay uses `contextUsed result`. The caller must establish that this is the
+intended context and inspect the conclusion and restrictions. A successful local
+check is separate from acceptance by Lean or another proof assistant. It does
+not establish that the source domain is inhabited or that the obligations hold.
+`completion` is a search report and is not checked by replay. Derived `Show`
+output is diagnostic, not a certificate serialization format.
