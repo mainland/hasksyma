@@ -23,10 +23,14 @@
 module Hasksyma.Const (
   Const(..),
   IsConst(..),
-  isExact
+  isExact,
+  sameConst,
+  toRationalMaybe,
+  toIntegerMaybe
 ) where
 
 import           Data.Complex                    (Complex (..))
+import           Data.Ratio                      (denominator, numerator)
 #if defined(CYCLOTOMIC)
 import           Data.Complex.Cyclotomic         (Cyclotomic (..))
 import qualified Data.Complex.Cyclotomic         as Cyc
@@ -60,6 +64,47 @@ import           Hasksyma.Pretty                 (addPrec)
 -- preserve exactness when the squared magnitude is rational, including zero
 -- and real square roots of rationals. Other squared magnitudes currently raise
 -- an error in the cyclotomic library. No approximate sign test is used.
+--
+-- Equality compares exact comparison keys, not rounded interpretations of
+-- symbolic constants. Integers, rationals, zero multiples of pi, and rational
+-- cyclotomic values share rational keys. Evaluated payloads participate through
+-- 'exactRational', without changing whether 'isExact' reports them as exact.
+-- Nonzero multiples of pi and Euler's number retain distinct symbolic keys.
+-- This is a supported identity relation, not a general mathematical equality
+-- decision procedure.
+--
+-- Ordering is structural, not numerical: rational keys precede nonzero pi
+-- multiples, then Euler's number, nonrational cyclotomic keys when enabled,
+-- and opaque payloads. Compare rational values and pi coefficients exactly,
+-- and cyclotomic representations by their order and coefficient maps.
+-- Project with 'fromConst' explicitly when numerical comparison is intended.
+--
+-- Opaque payloads inherit their underlying 'Eq' and 'Ord' behavior. The
+-- instances are lawful when those payload instances are lawful. In particular,
+-- floating NaNs remain nonreflexive and must not be used as ordered keys.
+-- Signed floating zeros share a key. This is not bitwise IEEE identity.
+--
+-- Division by an exact zero and its reciprocal use the underlying @a@
+-- operation. Floating payloads can therefore produce infinities or NaNs,
+-- while rational payloads still raise their division-by-zero exception.
+-- This also applies to negative integer powers of exact zero. Nonzero
+-- rational division retains its exact representation.
+--
+-- Perfect squares stored as 'IntegerC' reduce to 'IntegerC' roots using
+-- integer arithmetic, even beyond the floating payload's precision or range.
+-- Square roots of negative real constants use the underlying floating
+-- operation, including with @cyclotomic@ enabled. These arguments are never
+-- passed to the exact real radical constructor.
+-- Complex payloads retain principal complex square-root semantics.
+--
+-- Numeric projections are partial. 'toRational' accepts exact rational
+-- representations, and 'toInteger' accepts exact integer representations.
+-- 'fromEnum' delegates rational representations to their 'Enum' instance.
+-- These operations reject unsupported symbolic constants instead of silently
+-- approximating them. For @Const@ payloads they delegate to the underlying
+-- type, inheriting its conversion behavior and possible exceptions.
+-- Use 'toRationalMaybe' and 'toIntegerMaybe' for checked exact projections.
+-- To request numerical evaluation explicitly, apply 'fromConst' first.
 data Const a where
     -- | An already evaluated value.
     Const     :: a -> Const a
@@ -82,15 +127,70 @@ data Const a where
 class IsConst a where
     -- | Project a value of type @a@ from a @t'Const' a@.
     --
-    -- The default implementation accepts only the v'Const' constructor.
-    -- Instances must handle any other constructors they support.
+    -- The default implementation evaluates every constructor using its
+    -- numeric constraints, so instances need only override this method to
+    -- customize conversion.
     fromConst :: Const a -> a
-    fromConst (Const x) = x
-    fromConst _         = error "can't happen"
+    fromConst (Const x)     = x
+    fromConst (Pi k)        = fromRational k * pi
+    fromConst E             = exp 1
+    fromConst (IntegerC x)  = fromInteger x
+    fromConst (RationalC x) = fromRational x
+#if defined(CYCLOTOMIC)
+    fromConst (RealCycC x)  = RealCyc.toReal x
+    fromConst (CycC x)      = fromCyclotomic x
+#endif /* defined(CYCLOTOMIC) */
 
     -- | Construct a value of type @t'Const' a@ from a value of type @a@.
     toConst :: a -> Const a
     toConst x = Const x
+
+    -- | Return the exact rational value of an evaluated payload when supported.
+    -- Used for comparison and checked projection, without approximating
+    -- symbolic constants or changing their stored representation.
+    -- Return 'Nothing' for opaque values.
+    -- A supplied rational must represent the payload exactly.
+    --
+    -- Built-in integral and rational instances provide their exact values.
+    -- Finite floating values provide their exact binary rationals. Infinities,
+    -- NaNs, and complex values with nonzero imaginary parts remain opaque.
+    -- Custom instances default to opaque comparison, so their payloads remain
+    -- distinct from exact constant constructors unless this method is supplied.
+    exactRational :: a -> Maybe Rational
+    exactRational _ = Nothing
+
+    -- | Compare evaluated payloads for rewrite bookkeeping, not algebraic
+    -- equality. The default uses '==' and inherits its limitations. Override
+    -- it for payloads with nonreflexive equality if unbounded rewriting must
+    -- recognize unchanged values.
+    -- Reliable fixed-point and cycle detection require a reflexive, symmetric,
+    -- transitive identity relation that distinguishes payload changes relevant
+    -- to rewriting.
+    --
+    -- Built-in floating instances treat all NaNs as the same payload and
+    -- distinguish signed zeros. Complex instances compare both components
+    -- with that policy. This does not change ordinary 'Eq' or authorize
+    -- algebraic identities involving NaNs. NaN bit patterns are not preserved
+    -- by this identity relation.
+    samePayload :: Eq a => a -> a -> Bool
+    samePayload = (==)
+
+-- | Compare constant constructors and their stored payloads for rewrite
+-- bookkeeping. Unlike 'Eq', this distinguishes integer, rational, and
+-- evaluated representations of the same value. Evaluated values use
+-- 'samePayload', including its documented NaN and signed-zero policy.
+-- This is not a mathematical equality test.
+sameConst :: (Eq a, IsConst a) => Const a -> Const a -> Bool
+sameConst (Const x)     (Const y)     = samePayload x y
+sameConst (IntegerC x)  (IntegerC y)  = x == y
+sameConst (RationalC x) (RationalC y) = x == y
+sameConst (Pi x)        (Pi y)        = x == y
+sameConst E             E             = True
+#if defined(CYCLOTOMIC)
+sameConst (RealCycC x)  (RealCycC y)  = x == y
+sameConst (CycC x)      (CycC y)      = x == y
+#endif
+sameConst _             _             = False
 
 -- | Return 'True' if a constant retains an exact symbolic representation.
 --
@@ -109,7 +209,38 @@ isExact CycC{}      = True
 #endif /* defined(CYCLOTOMIC) */
 isExact _           = False
 
--- | Convert constants to a "canonical" form suitable for comparison.
+-- | Project a supported exact rational value without approximation.
+--
+-- Integer and rational constants, zero multiples of pi, and rational
+-- cyclotomic constants are supported. Evaluated payloads use 'exactRational',
+-- so finite built-in floating values yield their exact binary rationals.
+-- Nonfinite or opaque payloads, nonreal complex values, and unsupported
+-- irrational constants return 'Nothing'. This does not change 'isExact'.
+toRationalMaybe :: IsConst a => Const a -> Maybe Rational
+toRationalMaybe (Const x) = exactRational x
+toRationalMaybe c         = symbolicRational c
+
+-- | Project a supported exact integer value without rounding or truncation.
+-- Return 'Nothing' when 'toRationalMaybe' fails or yields a noninteger.
+toIntegerMaybe :: IsConst a => Const a -> Maybe Integer
+toIntegerMaybe c = do
+    q <- toRationalMaybe c
+    if denominator q == 1 then Just (numerator q) else Nothing
+
+-- Independent of the payload's IsConst instance, so Enum can project exact
+-- symbolic values without strengthening its existing instance constraint.
+symbolicRational :: Const a -> Maybe Rational
+symbolicRational (IntegerC n)                  = Just (fromInteger n)
+symbolicRational (RationalC q)                 = Just q
+symbolicRational (Pi 0)                        = Just 0
+#if defined(CYCLOTOMIC)
+symbolicRational (RealCycC (RealCyclotomic x)) = Cyc.toRat x
+symbolicRational (CycC x)                      = Cyc.toRat x
+#endif
+symbolicRational _                             = Nothing
+
+-- Coerce constants to a common representation for arithmetic. The fallback
+-- may approximate symbolic values, so comparison must not use this function.
 joinWith :: IsConst a
          => (Const a -> Const a -> b)
          -> Const a
@@ -142,25 +273,40 @@ joinWith f x             y             = f (Const (fromConst x)) (Const (fromCon
 
 deriving instance Show a => Show (Const a)
 
-instance (Eq a, IsConst a) => Eq (Const a) where
-    Const x     == Const y     = x == y
-    IntegerC x  == IntegerC y  = x == y
-    RationalC x == RationalC y = x == y
+-- Normalize only established exact equivalences. Constructor order gives a
+-- structural order without requiring numerical ordering of named constants.
+data ComparisonKey a
+  = RationalKey Rational
+  | PiKey Rational
+  | EKey
 #if defined(CYCLOTOMIC)
-    CycC x      == CycC y      = x == y
-    RealCycC x  == RealCycC y  = x == y
-#endif /* defined(CYCLOTOMIC) */
-    x           == y           = joinWith (==) x y
+  | CyclotomicKey Integer [(Integer, Rational)]
+#endif
+  | PayloadKey a
+  deriving (Eq, Ord)
+
+comparisonKey :: IsConst a => Const a -> ComparisonKey a
+comparisonKey (Const x)                     = maybe (PayloadKey x) RationalKey (exactRational x)
+comparisonKey (IntegerC x)                  = RationalKey (fromInteger x)
+comparisonKey (RationalC x)                 = RationalKey x
+comparisonKey (Pi 0)                        = RationalKey 0
+comparisonKey (Pi x)                        = PiKey x
+comparisonKey E                             = EKey
+#if defined(CYCLOTOMIC)
+comparisonKey (RealCycC (RealCyclotomic x)) = cyclotomicKey x
+comparisonKey (CycC x)                      = cyclotomicKey x
+
+cyclotomicKey :: Cyclotomic -> ComparisonKey a
+cyclotomicKey x = case Cyc.toRat x of
+    Just q  -> RationalKey q
+    Nothing -> CyclotomicKey (Cyc.order x) (Map.toAscList (Cyc.coeffs x))
+#endif
+
+instance (Eq a, IsConst a) => Eq (Const a) where
+    x == y = comparisonKey x == comparisonKey y
 
 instance (Ord a, IsConst a) => Ord (Const a) where
-    compare (Const x)     (Const y)     = compare x y
-    compare (IntegerC x)  (IntegerC y)  = compare x y
-    compare (RationalC x) (RationalC y) = compare x y
-#if defined(CYCLOTOMIC)
-    compare (RealCycC x)  (RealCycC y)  = compare (RealCyc.toReal x :: Double) (RealCyc.toReal y :: Double)
-    compare CycC{}        CycC{}        = error "incomparable"
-#endif /* defined(CYCLOTOMIC) */
-    compare x             y             = joinWith compare x y
+    compare x y = compare (comparisonKey x) (comparisonKey y)
 
 #if defined(CYCLOTOMIC)
 -- | Export a t'Cyclotomic' as an inexact complex number. This function avoids
@@ -176,61 +322,40 @@ fromRealCyclotomic x = fromJust (Cyc.toReal x :: Maybe a)
 #endif /* defined(CYCLOTOMIC) */
 
 instance IsConst Int where
-    fromConst (Const x)    = x
-    fromConst (IntegerC x) = fromInteger x
-    fromConst _            = error "can't happen"
-
     toConst = IntegerC . fromIntegral
+    exactRational = Just . toRational
 
 instance IsConst Integer where
-    fromConst (Const x)    = x
-    fromConst (IntegerC x) = fromInteger x
-    fromConst _            = error "can't happen"
-
     toConst = IntegerC
+    exactRational = Just . fromInteger
 
 instance IsConst Float where
-    fromConst (Const x)     = x
-    fromConst (Pi k)        = fromRational k * pi
-    fromConst E             = exp 1
-    fromConst (IntegerC x)  = fromInteger x
-    fromConst (RationalC x) = fromRational x
-#if defined(CYCLOTOMIC)
-    fromConst (RealCycC x)  = RealCyc.toReal x
-#endif /* defined(CYCLOTOMIC) */
+    exactRational = finiteRational
+    samePayload = sameFloatingPayload
 
 instance IsConst Double where
-    fromConst (Const x)     = x
-    fromConst (Pi k)        = fromRational k * pi
-    fromConst E             = exp 1
-    fromConst (IntegerC x)  = fromInteger x
-    fromConst (RationalC x) = fromRational x
-#if defined(CYCLOTOMIC)
-    fromConst (RealCycC x)  = RealCyc.toReal x
-#endif /* defined(CYCLOTOMIC) */
+    exactRational = finiteRational
+    samePayload = sameFloatingPayload
 
 instance IsConst Rational where
-    fromConst (Const x)     = x
-    fromConst (Pi k)        = fromRational k * pi
-    fromConst E             = exp 1
-    fromConst (IntegerC x)  = fromInteger x
-    fromConst (RationalC x) = x
-#if defined(CYCLOTOMIC)
-    fromConst (RealCycC x)  = RealCyc.toReal x
-#endif /* defined(CYCLOTOMIC) */
-
     toConst = RationalC
+    exactRational = Just
 
 instance RealFloat a => IsConst (Complex a) where
-    fromConst (Const x)     = x
-    fromConst (Pi k)        = fromRational k * pi
-    fromConst E             = exp 1
-    fromConst (IntegerC x)  = fromInteger x
-    fromConst (RationalC x) = fromRational x
-#if defined(CYCLOTOMIC)
-    fromConst (RealCycC x)  = RealCyc.toReal x
-    fromConst (CycC x)      = fromCyclotomic x
-#endif /* defined(CYCLOTOMIC) */
+    exactRational (r :+ i) | i == 0 = finiteRational r
+                           | otherwise = Nothing
+    samePayload (r :+ i) (r' :+ i') =
+        sameFloatingPayload r r' && sameFloatingPayload i i'
+
+finiteRational :: RealFloat a => a -> Maybe Rational
+finiteRational x | isNaN x || isInfinite x = Nothing
+                 | otherwise = Just (toRational x)
+
+sameFloatingPayload :: RealFloat a => a -> a -> Bool
+sameFloatingPayload x y
+    | isNaN x && isNaN y = True
+    | x == 0 && y == 0   = isNegativeZero x == isNegativeZero y
+    | otherwise          = x == y
 
 -- | Lift a unary operation on @'Num'@ type class to the type @t'Const' a@.
 liftNum :: (IsConst b, Num b)
@@ -261,14 +386,15 @@ liftNum2 f (CycC x)      (CycC y)      = CycC (f x y)
 #endif /* defined(CYCLOTOMIC) */
 liftNum2 f x             y             = joinWith (liftNum2 f) x y
 
+-- | Lift a binary operation on 'Integral' to the type @t'Const' b@.
 liftIntegral2 :: (IsConst b, Integral b)
               => (forall a . Integral a => a -> a -> a)
               -> Const b
               -> Const b
               -> Const b
--- | Lift a binary operation on 'Integral' to the type 'b
-liftIntegral2 f (Const x) (Const y) = Const (f x y)
-liftIntegral2 f x          y        = joinWith (liftIntegral2 f) x y
+liftIntegral2 f (Const x)    (Const y)    = Const (f x y)
+liftIntegral2 f (IntegerC x) (IntegerC y) = IntegerC (f x y)
+liftIntegral2 f x            y            = joinWith (liftIntegral2 f) x y
 
 instance (IsConst a, Num a) => Num (Const a) where
     Pi k1 + Pi k2 = Pi (k1 + k2)
@@ -303,28 +429,20 @@ instance (IsConst a, Num a) => Num (Const a) where
     fromInteger x = IntegerC x
 
 instance (IsConst a, Real a) => Real (Const a) where
-    toRational (Const x)     = toRational x
-    toRational Pi{}          = error "can't happen"
-    toRational E{}           = error "can't happen"
-    toRational (IntegerC x)  = fromInteger x
-    toRational (RationalC x) = x
-#if defined(CYCLOTOMIC)
-    toRational RealCycC{}    = error "can't happen"
-    toRational CycC{}        = error "can't happen"
-#endif /* defined(CYCLOTOMIC) */
+    toRational (Const x) = toRational x
+    toRational c         = case symbolicRational c of
+                             Just q  -> q
+                             Nothing -> error "toRational: constant has no supported exact rational projection"
 
 instance Enum a => Enum (Const a) where
     toEnum x = Const (toEnum x)
 
     fromEnum (Const x)     = fromEnum x
-    fromEnum Pi{}          = error "can't happen"
-    fromEnum E{}           = error "can't happen"
     fromEnum (IntegerC x)  = fromEnum x
     fromEnum (RationalC x) = fromEnum x
-#if defined(CYCLOTOMIC)
-    fromEnum RealCycC{}    = error "can't happen"
-    fromEnum CycC{}        = error "can't happen"
-#endif /* defined(CYCLOTOMIC) */
+    fromEnum c             = case symbolicRational c of
+                               Just q  -> fromEnum q
+                               Nothing -> error "fromEnum: constant requires explicit evaluation"
 
 instance (IsConst a, Integral a) => Integral (Const a) where
     quot = liftIntegral2 quot
@@ -337,14 +455,10 @@ instance (IsConst a, Integral a) => Integral (Const a) where
     x `divMod` y = (x `div` y, x `mod` y)
 
     toInteger (Const x)    = toInteger x
-    toInteger Pi{}         = error "can't happen"
-    toInteger E{}          = error "can't happen"
     toInteger (IntegerC x) = x
-    toInteger RationalC{}  = error "can't happen"
-#if defined(CYCLOTOMIC)
-    toInteger RealCycC{}   = error "can't happen"
-    toInteger CycC{}       = error "can't happen"
-#endif /* defined(CYCLOTOMIC) */
+    toInteger c            = case toIntegerMaybe c of
+                               Just n  -> n
+                               Nothing -> error "toInteger: constant has no supported exact integer projection"
 
 -- | Lift a unary operation on 'Num' to the type 'Const a'
 liftFractional :: (IsConst b, Fractional b)
@@ -375,12 +489,27 @@ liftFractional2 f (RealCycC x)  (RealCycC y)  = RealCycC (f x y)
 #endif /* defined(CYCLOTOMIC) */
 liftFractional2 f x             y             = joinWith (liftFractional2 f) x y
 
+-- Exact arithmetic cannot represent division by zero. Recognize it without
+-- requiring Eq for arbitrary payloads or approximating symbolic constants.
+isExactZero :: Const a -> Bool
+isExactZero (IntegerC x)  = x == 0
+isExactZero (RationalC x) = x == 0
+isExactZero (Pi x)        = x == 0
+#if defined(CYCLOTOMIC)
+isExactZero (RealCycC x)  = x == 0
+isExactZero (CycC x)      = x == 0
+#endif
+isExactZero _             = False
+
 instance (IsConst a, Fractional a) => Fractional (Const a) where
+    x / y | isExactZero y = toConst (fromConst x / fromConst y)
+
     Pi x / IntegerC y  = Pi (x / fromInteger y)
     Pi x / RationalC y = Pi (x / y)
     x    / y           = liftFractional2 (/) x y
 
-    recip  = liftFractional recip
+    recip x | isExactZero x = toConst (recip (fromConst x))
+    recip x                 = liftFractional recip x
 
     fromRational x = RationalC x
 
@@ -399,6 +528,25 @@ liftFloating2 :: (IsConst b, Floating b)
 liftFloating2 f (Const x) (Const y) = Const (f x y)
 liftFloating2 f x         y         = toConst (f (fromConst x) (fromConst y))
 
+-- Recognize a nonnegative perfect square without a floating approximation.
+exactIntegerSqrt :: Integer -> Maybe Integer
+exactIntegerSqrt n
+    | n < 0     = Nothing
+    | n == 0    = Just 0
+    | r*r == n  = Just r
+    | otherwise = Nothing
+  where
+    r = go n
+
+    -- Integer Newton iteration starts above the root. Estimates stay positive
+    -- and never fall below the floor of the root, so division is safe. Stop
+    -- when the estimate no longer decreases to avoid cycling for nonsquares.
+    go x
+        | y >= x    = x
+        | otherwise = go y
+      where
+        y = (x + n `quot` x) `quot` 2
+
 instance Floating (Const Float) where
     pi = Pi 1
 
@@ -407,13 +555,10 @@ instance Floating (Const Float) where
     log E = 1
     log x = liftFloating log x
 
-    sqrt (IntegerC x) | y*y == x = IntegerC y
-      where
-        y :: Integer
-        y = ceiling (sqrt (fromInteger x :: Double))
+    sqrt (IntegerC x) | Just y <- exactIntegerSqrt x = IntegerC y
 #if defined(CYCLOTOMIC)
-    sqrt (IntegerC x)  = RealCycC $ RealCyc.sqrtRat (fromInteger x)
-    sqrt (RationalC x) = RealCycC $ RealCyc.sqrtRat x
+    sqrt (IntegerC x)  | x >= 0 = RealCycC $ RealCyc.sqrtRat (fromInteger x)
+    sqrt (RationalC x) | x >= 0 = RealCycC $ RealCyc.sqrtRat x
 #endif /* defined(CYCLOTOMIC) */
     sqrt x             = liftFloating sqrt x
 
@@ -452,13 +597,10 @@ instance Floating (Const Double) where
     log E = 1
     log x = liftFloating log x
 
-    sqrt (IntegerC x) | y*y == x = IntegerC y
-      where
-        y :: Integer
-        y = ceiling (sqrt (fromInteger x :: Double))
+    sqrt (IntegerC x) | Just y <- exactIntegerSqrt x = IntegerC y
 #if defined(CYCLOTOMIC)
-    sqrt (IntegerC x)  = RealCycC $ RealCyc.sqrtRat (fromInteger x)
-    sqrt (RationalC x) = RealCycC $ RealCyc.sqrtRat x
+    sqrt (IntegerC x)  | x >= 0 = RealCycC $ RealCyc.sqrtRat (fromInteger x)
+    sqrt (RationalC x) | x >= 0 = RealCycC $ RealCyc.sqrtRat x
 #endif /* defined(CYCLOTOMIC) */
     sqrt x             = liftFloating sqrt x
 
@@ -497,10 +639,7 @@ instance RealFloat a => Floating (Const (Complex a)) where
     log E = 1
     log x = liftFloating log x
 
-    sqrt (IntegerC x) | y*y == x = IntegerC y
-      where
-        y :: Integer
-        y = ceiling (sqrt (fromInteger x :: Double))
+    sqrt (IntegerC x) | Just y <- exactIntegerSqrt x = IntegerC y
 #if defined(CYCLOTOMIC)
     sqrt (IntegerC x)  = CycC $ Cyc.sqrtInteger x
     sqrt (RationalC x) = CycC $ Cyc.sqrtRat x

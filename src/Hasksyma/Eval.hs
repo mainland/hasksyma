@@ -19,11 +19,20 @@ module Hasksyma.Eval
 import           Hasksyma.Const (IsConst)
 import           Hasksyma.Exp   (Exp (..), floatbinop, floatunop, fracbinop, fracunop, intbinop,
                                  liftFloating, liftFloating2, liftFracPow, liftFractional,
-                                 liftFractional2, liftIntPow, liftIntegral2, liftNum, liftNum2,
-                                 numbinop, numunop)
+                                 liftFractional2, liftIntPow, liftIntegral2, liftNatPow, liftNum,
+                                 liftNum2, numbinop, numunop)
 
 -- | Fully evaluate all closed subexpressions of an expression. Does not
 -- preserve exactness.
+--
+-- Division by a zero constant, its reciprocal, and its negative integer
+-- powers follow the underlying numeric type. Floating results may contain
+-- infinities or NaNs. Types such as Rational can still raise exceptions.
+-- Use 'evalexact' to leave these known zero-denominator operations unreduced.
+--
+-- Square roots of negative real constants use the underlying floating operation
+-- in both ordinary and cyclotomic builds. Exact evaluation leaves these roots
+-- unreduced.
 --
 -- >>> import Hasksyma.Const (Const (..))
 -- >>> import Hasksyma.Exp (Exp (..), NumBinop (..))
@@ -47,12 +56,15 @@ eval (FloatUnopE op e)       = case eval e of
 eval (NumBinopE op e1 e2)    = case (eval e1, eval e2) of
                                  (ConstE x, ConstE y) -> ConstE $ numbinop op x y
                                  (e1', e2')           -> NumBinopE op e1' e2'
-eval (IntPowE e n)           = case eval e of
+eval (NatPowE e n)           = case eval e of
                                  ConstE x -> ConstE (x ^ n)
-                                 e'       -> IntPowE e' n
-eval (FracPowE e n)          = case eval e of
+                                 e'       -> NatPowE e' n
+eval (IntPowE e n)           = case eval e of
                                  ConstE x -> ConstE (x ^^ n)
                                  e'       -> IntPowE e' n
+eval (FracPowE e n)          = case eval e of
+                                 ConstE x -> ConstE (x ** fromRational n)
+                                 e'       -> FracPowE e' n
 eval (IntBinopE op e1 e2)    = case (eval e1, eval e2) of
                                  (ConstE x, ConstE y) -> ConstE $ intbinop op x y
                                  (e1', e2')           -> IntBinopE op e1' e2'
@@ -68,6 +80,7 @@ eval e@IntE{}                = e
 -- | Fully evaluate closed subexpressions of an expression when possible while
 -- preserving exactness.
 evalexact :: (IsConst a, Eq a) => Exp a -> Exp a
+evalexact (NatPowE e n)          = liftNatPow (evalexact e) n
 evalexact (IntPowE e n)          = liftIntPow (evalexact e) n
 evalexact (FracPowE e n)         = liftFracPow (evalexact e) n
 evalexact (NumUnopE op e)        = liftNum op (evalexact e)

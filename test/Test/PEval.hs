@@ -12,17 +12,18 @@ module Test.PEval where
 
 import           Data.Proxy      (Proxy (Proxy))
 import           Test.Hspec      (SpecWith, describe, it)
+import           Test.HUnit      ((@?=))
 import           Test.QuickCheck (NonNegative (NonNegative), Property, property, (===))
 
 import           Hasksyma.Const  (IsConst)
-import           Hasksyma.Exp    (Exp (FracPowE, IntPowE, VarE))
+import           Hasksyma.Exp    (Exp (IntPowE, NatPowE, VarE))
 
 prop_nonnegative_pow :: (Num a, IsConst a, Eq a, Show a)
                      => proxy a
                      -> Exp a -> NonNegative Integer -> Property
 prop_nonnegative_pow _ e (NonNegative 0) = e^(0 :: Integer) === 1
 prop_nonnegative_pow _ e (NonNegative 1) = e^(1 :: Integer) === e
-prop_nonnegative_pow _ e (NonNegative n) = e^n === IntPowE e n
+prop_nonnegative_pow _ e (NonNegative n) = e^n === NatPowE e (fromInteger n)
 
 prop_integral_pow :: (Fractional a, IsConst a, Eq a, Show a)
                   => proxy a
@@ -30,8 +31,8 @@ prop_integral_pow :: (Fractional a, IsConst a, Eq a, Show a)
 prop_integral_pow _ e (-1) = e^^(-1 :: Integer) === recip e
 prop_integral_pow _ e 0    = e^^(0 :: Integer) === 1
 prop_integral_pow _ e 1    = e^^(1 :: Integer) === e
-prop_integral_pow _ e n | n > 0     = e^^n === IntPowE e n
-                        | otherwise = e^^n === FracPowE e n
+prop_integral_pow _ e n | n > 0     = e^^n === NatPowE e (fromInteger n)
+                        | otherwise = e^^n === IntPowE e n
 
 powPevalTests :: SpecWith ()
 powPevalTests =
@@ -45,6 +46,8 @@ powPevalTests =
           property $ prop_nonnegative_pow (Proxy :: Proxy Rational) (x-1)
         it "integral powers" $
           property $ prop_integral_pow (Proxy :: Proxy Rational) (x-1)
+        it "recip (x ^ 3) = x ^^ (-3)" $
+          (recip (NatPowE x 3) :: Exp Rational) @?= IntPowE x (-3)
 
       describe "Double" $ do
         it "non-negative integral powers" $

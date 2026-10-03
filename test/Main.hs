@@ -20,6 +20,7 @@ import           Test.NoPEval
 #else
 import           Test.PEval
 #endif
+import           Test.Root
 import           Test.Simplify
 
 main :: IO ()
@@ -33,6 +34,7 @@ spec = do
     simplifyTests
     diffTests
     integrateTests
+    rootTests
 #if defined(PEVAL)
     powPevalTests
 #else
