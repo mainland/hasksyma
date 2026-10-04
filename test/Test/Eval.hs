@@ -25,10 +25,11 @@ module Test.Eval
   where
 
 import           Control.Applicative (Alternative, empty, (<|>))
+import           Control.Exception   (ArithException (DivideByZero), evaluate)
 import           Control.Monad       (forM_)
 import           Data.Complex        (Complex (..))
 import           Data.Ratio          (denominator)
-import           Test.Hspec          (Spec, describe, it)
+import           Test.Hspec          (Spec, describe, it, shouldThrow)
 import           Test.HUnit          (assertFailure, (@?=))
 import           Test.QuickCheck     (Arbitrary (..), Gen, Positive (..), Property,
                                       Testable (property), arbitraryBoundedEnum, discard, frequency,
@@ -37,7 +38,8 @@ import           Test.QuickCheck     (Arbitrary (..), Gen, Positive (..), Proper
 import           Hasksyma.Const      (Const (..), IsConst (fromConst, samePayload))
 import           Hasksyma.Eval       (eval, evalexact)
 import           Hasksyma.Exp        (Exp (..), FloatBinop (..), FloatUnop (..), FracBinop (..),
-                                      FracUnop (..), NumBinop (..), NumUnop (..), isExactE, sameExp)
+                                      FracUnop (..), IntBinop (..), NumBinop (..), NumUnop (..),
+                                      isExactE, sameExp)
 
 -- | Select finite, well-scaled closed expressions for numerical properties.
 -- The ranges deliberately sample less than the full mathematical domains.
@@ -266,6 +268,16 @@ evalTests = describe "Evaluation" $ do
         case eval (1/0 :: Exp Double) of
           ConstE (Const value) -> value @?= 1/0
           result               -> assertFailure $ show result
+    describe "Integral zero-division regressions" $
+      forM_ [Quot, Rem, Div, Mod] $ \op -> do
+        it ("leaves " ++ show op ++ " by exact zero unreduced") $ do
+          let e = IntBinopE op 1 0 :: Exp Integer
+          sameExp (evalexact e) e @?= True
+        it ("retains " ++ show op ++ " after computing a zero divisor") $ do
+          let e = IntBinopE op 1 (NumBinopE Sub 2 2) :: Exp Integer
+          sameExp (evalexact e) (IntBinopE op 1 0) @?= True
+        it ("retains the native " ++ show op ++ " zero-divisor exception during ordinary evaluation") $
+          evaluate (length (show (eval (IntBinopE op 1 0 :: Exp Integer)))) `shouldThrow` (== DivideByZero)
     describe "Numeric test helpers" $ do
       forM_ [("sine", FloatUnopE Sin 1),
              ("cosine", FloatUnopE Cos 1),

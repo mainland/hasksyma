@@ -363,12 +363,14 @@ liftNum2 op e1 e2 = NumBinopE op e1 e2
 
 -- | Lift a 'IntBinop' operator to an @t'Exp' a@, reducing constants when
 -- possible while preserving exactness.
+-- Leave known-zero divisors unreduced rather than constructing an exceptional
+-- constant payload.
 liftIntegral2 :: (IsConst a, Integral a)
               => IntBinop
               -> Exp a
               -> Exp a
               -> Exp a
-liftIntegral2 op (ConstE x) (ConstE y) | isExact z = ConstE z
+liftIntegral2 op (ConstE x) (ConstE y) | y /= 0 && isExact z = ConstE z
   where
     z = intbinop op x y
 

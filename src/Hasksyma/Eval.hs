@@ -79,6 +79,8 @@ eval e@IntE{}                = e
 
 -- | Fully evaluate closed subexpressions of an expression when possible while
 -- preserving exactness.
+-- Leave known-zero division, reciprocals, and negative powers unreduced,
+-- including integral 'quot', 'rem', 'div', and 'mod' operations.
 evalexact :: (IsConst a, Eq a) => Exp a -> Exp a
 evalexact (NatPowE e n)          = liftNatPow (evalexact e) n
 evalexact (IntPowE e n)          = liftIntPow (evalexact e) n

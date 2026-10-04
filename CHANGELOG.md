@@ -87,6 +87,8 @@
   constants as bases, and rational coefficients may use `RationalC`.
 - Decompose raw reciprocals consistently with negative integer powers in both
   partial-evaluation modes.
+- Keep known-zero divisors unreduced in exact integral evaluation. Ordinary
+  evaluation retains the underlying division-by-zero exception.
 - Document ordinary simplification as algebraic rewriting that may extend the
   source domain. It cancels matching opposite terms and quotient factors and
   reduces zero products and numerators without recording exclusions. Known-zero
