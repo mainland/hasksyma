@@ -20,7 +20,7 @@ import           Hasksyma.Const
 import           Hasksyma.Diff      (diff)
 import           Hasksyma.Eval      (eval)
 import           Hasksyma.Exp       (Exp (..), FloatBinop (..), FloatUnop (Tan), FracBinop (..),
-                                     NumBinop (..), isExactE, sameExp)
+                                     FracUnop (..), NumBinop (..), isExactE, sameExp)
 import           Hasksyma.Integrate
 import           Hasksyma.Simplify
 
@@ -215,6 +215,8 @@ logarithmicIntegralTests = describe "Logarithmic integration" $ do
     integrands :: [(String, Exp Double)]
     integrands =
       [ ("a quotient", 1/x)
+      , ("an overloaded reciprocal", recip x)
+      , ("a raw reciprocal", FracUnopE Recip x)
       , ("a normalized reciprocal", simplify (recip x))
       , ("a negative integer power", IntPowE x (-1))
       , ("a linear substitution", 1/(2*x+1/2))
@@ -384,6 +386,8 @@ factorizationRegressionTests = describe "Factorization regressions" $ do
       isExactE (unfactorize (factorize e)) @?= True
     it "retains a known-zero base with a negative exponent" $
       factorize (IntPowE 0 (-1) :: Exp Double) @?= [(0, -1)]
+    it "decomposes raw reciprocals using signed integer exponents" $
+      factorize (FracUnopE Recip (NatPowE x 2)) @?= [(x, -2)]
 #if defined(CYCLOTOMIC)
     it "preserves exact complex cyclotomic factors" $ do
       let c = sqrt (IntegerC (-1)) :: Const (Complex Double)

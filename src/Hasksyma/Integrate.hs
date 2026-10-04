@@ -45,8 +45,8 @@ data Factors a = F
 -- integration heuristics. This uses algebraic product and power rewrites and
 -- does not track their domain or branch conditions.
 --
--- Decompose products, quotients, and powers with natural or signed integer
--- exponents. General powers are decomposed only when their exponent is an
+-- Decompose products, quotients, reciprocals, and powers with natural or signed
+-- integer exponents. General powers are decomposed only when their exponent is an
 -- 'IntegerC'. Keep 'FracPowE' and other general powers intact as bases with
 -- integer multiplicities, avoiding distribution or merging of fractional
 -- exponents across potentially negative or complex bases.
@@ -97,6 +97,9 @@ factorize e0 | k0 == 0   = [(0, 1)]
 
     fac (FracBinopE FDiv e1 e2) n fs =
       fac e2 (-n) (fac e1 n fs)
+
+    fac (FracUnopE Recip e) n fs =
+      fac e (-n) fs
 
     fac (NatPowE e m) n fs =
       fac e (n*toInteger m) fs

@@ -85,6 +85,8 @@
 - Preserve exact rational coefficients and symbolic irrational constants during
   factorization and heuristic integration. Factor lists retain irrational
   constants as bases, and rational coefficients may use `RationalC`.
+- Decompose raw reciprocals consistently with negative integer powers in both
+  partial-evaluation modes.
 - Document ordinary simplification as algebraic rewriting that may extend the
   source domain. It cancels matching opposite terms and quotient factors and
   reduces zero products and numerators without recording exclusions. Known-zero
