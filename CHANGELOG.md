@@ -89,6 +89,9 @@
   partial-evaluation modes.
 - Keep known-zero divisors unreduced in exact integral evaluation. Ordinary
   evaluation retains the underlying division-by-zero exception.
+- Stop ordinary simplification from cycling on products of powers with
+  constant bases. Such powers no longer move ahead of every product or
+  quotient factor, so some products keep their original factor order.
 - Document ordinary simplification as algebraic rewriting that may extend the
   source domain. It cancels matching opposite terms and quotient factors and
   reduces zero products and numerators without recording exclusions. Known-zero

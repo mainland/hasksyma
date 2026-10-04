@@ -29,9 +29,10 @@ import           Numeric.Natural (Natural)
 
 import           Hasksyma.Const  (Const (..), IsConst, isExact)
 import           Hasksyma.Exp    (Exp (..), FloatBinop (..), FloatUnop (..), FracBinop (..),
-                                  FracUnop (..), NumBinop (..), NumUnop (..), liftFloating,
-                                  liftFloating2, liftFracPow, liftFractional, liftFractional2,
-                                  liftIntPow, liftIntegral2, liftNatPow, liftNum, liftNum2, sameExp)
+                                  FracUnop (..), NumBinop (..), NumUnop (..), isConstE,
+                                  liftFloating, liftFloating2, liftFracPow, liftFractional,
+                                  liftFractional2, liftIntPow, liftIntegral2, liftNatPow, liftNum,
+                                  liftNum2, sameExp)
 
 -- | Fully simplify an expression.
 -- Iterate full bottom-up passes until 'sameExp' detects unchanged syntax.
@@ -354,9 +355,13 @@ prodbefore (pow -> Just p1) (pow -> Just p2)
 prodbefore NatPowE{}          FloatUnopE{}       = True
 prodbefore IntPowE{}          FloatUnopE{}       = True
 prodbefore FracPowE{}         FloatUnopE{}       = True
-prodbefore (NatPowE x _)      y                  = x `prodbefore` y
-prodbefore (IntPowE x _)      y                  = x `prodbefore` y
-prodbefore (FracPowE x _)     y                  = x `prodbefore` y
+-- A power of a constant is not itself a constant. Inheriting the rule that
+-- constants precede every factor would let two such powers each move ahead of
+-- a product or quotient containing the other, and the reordering rules in simp
+-- would cycle. Powers and variables are already ordered by their bases above.
+prodbefore (NatPowE x _)      y | not (isConstE x) = x `prodbefore` y
+prodbefore (IntPowE x _)      y | not (isConstE x) = x `prodbefore` y
+prodbefore (FracPowE x _)     y | not (isConstE x) = x `prodbefore` y
 prodbefore (NumUnopE op1 _)   (NumUnopE op2 _)   = op1 < op2
 prodbefore (FracUnopE op1 _)  (FracUnopE op2 _)  = op1 < op2
 prodbefore (FloatUnopE op1 _) (FloatUnopE op2 _) = op1 < op2

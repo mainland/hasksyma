@@ -784,6 +784,20 @@ terminationTests = describe "Rewrite termination" $ do
       let nan = ConstE (Const (0/0)) :: Exp Double
       in assertTerminates $ sameExp (simplify (NumBinopE Sub nan nan)) 0
 
+    describe "Products of powers with constant bases" $
+      -- Each power once moved ahead of any product or quotient, including one
+      -- containing the other power, so factor reordering cycled.
+      forM_ [ ("with a constant quotient", constPowQuotient)
+            , ("with a constant coefficient", constPowCoefficient)
+            ] $ \(name, e) -> do
+        it ("reaches a fixed point " ++ name) $
+          case simplifyWithLimit 100 e of
+            FixedPoint{} -> pure ()
+            result       -> assertFailure $ show result
+        forM_ [("simplify", simplify), ("simplify'", simplify')] $ \(simplifierName, simplifyWith) ->
+          it (simplifierName ++ " terminates " ++ name) $
+            assertTerminates $ isExactE (simplifyWith e)
+
     describe "Bounded rewriting" $ do
       it "reports an unchanged NaN as a fixed point" $
         assertTerminates $ case simplifyWithLimit 1 (ConstE (Const (0/0)) :: Exp Double) of
@@ -824,6 +838,22 @@ terminationTests = describe "Rewrite termination" $ do
         case rewriteWithLimit 3 id (ConstE (Const Opaque)) of
           StepLimitReached _ -> pure ()
           result             -> assertFailure $ show result
+
+-- 0 ** (1/5) * sqrt ((-1)/(-2)) / 3
+constPowQuotient :: Exp Double
+constPowQuotient =
+    FracBinopE FDiv
+      (NumBinopE Mul
+        (FracPowE (ConstE (IntegerC 0)) (1/5))
+        (FloatUnopE Sqrt (FracBinopE FDiv (ConstE (IntegerC (-1))) (ConstE (IntegerC (-2))))))
+      (ConstE (IntegerC 3))
+
+-- 2 ** (1/3) * ((-134/9) * 1 ** (3/2))
+constPowCoefficient :: Exp Double
+constPowCoefficient =
+    NumBinopE Mul
+      (FracPowE (ConstE (IntegerC 2)) (1/3))
+      (NumBinopE Mul (ConstE (RationalC (-134/9))) (FracPowE (ConstE (RationalC 1)) (3/2)))
 
 -- Exercise bounded rewriting without a reflexive payload identity.
 data Opaque = Opaque deriving (Show)
