@@ -30,11 +30,16 @@ simplifyTests :: Spec
 simplifyTests = describe "Simplification" $ do
     describe "Numeric test helpers" $ do
       forM_ [("zeros", 0, 0), ("equal values", 2, 2),
-             ("nearby values", 1, 1 + 1e-13)] $ \(name, x, y) ->
+             ("nearby values", 1, 1 + 1e-13),
+             ("rounding residue beside zero", -0.0, -4.440892098500626e-16)] $ \(name, x, y) ->
         it ("accepts " ++ name) $
           equiv eps (ConstE (Const x)) (ConstE (Const y))
-      it "rejects unequal finite values" $
-        expectFailure $ equiv eps 1 2
+      forM_ [("unequal finite values", 1, 2), ("a small value beside zero", 0, 1e-6),
+             ("large values beyond the relative tolerance", 1e6, 1e6 + 1)] $ \(name, x, y) ->
+        it ("rejects " ++ name) $
+          expectFailure $ equiv eps (ConstE (Const x)) (ConstE (Const y))
+      it "preserves evaluation when simplification cancels to rounding residue" $
+        popEvalSimplifyEquiv eps tensec (DExp cancellingQuotient)
       forM_ [("NaN", 0/0), ("positive infinity", 1/0), ("negative infinity", -1/0)] $ \(name, x) ->
         forM_ [("left", x, 1), ("right", 1, x), ("both", x, x)] $ \(position, a, b) ->
           it ("rejects " ++ name ++ " in " ++ position ++ " operands") $
@@ -839,6 +844,19 @@ terminationTests = describe "Rewrite termination" $ do
           StepLimitReached _ -> pure ()
           result             -> assertFailure $ show result
 
+-- (abs (1 + acos 1) - 1) / recip (-4 + (-1)/(-5)) evaluates to -0.0, but its
+-- simplified form evaluates to a rounding residue near -4.4e-16.
+cancellingQuotient :: Exp Double
+cancellingQuotient =
+    FracBinopE FDiv
+      (NumBinopE Sub
+        (NumUnopE Abs (NumBinopE Add (ConstE (IntegerC 1)) (FloatUnopE Acos (ConstE (RationalC 1)))))
+        (ConstE (RationalC 1)))
+      (FracUnopE Recip
+        (NumBinopE Add
+          (ConstE (IntegerC (-4)))
+          (FracBinopE FDiv (NumUnopE Neg (ConstE (IntegerC 1))) (ConstE (IntegerC (-5))))))
+
 -- 0 ** (1/5) * sqrt ((-1)/(-2)) / 3
 constPowQuotient :: Exp Double
 constPowQuotient =
@@ -986,11 +1004,13 @@ popEvalSimplifyEquiv eps ms (DExp e) =
      e1 = eval e'
      e2 = eval e
 
+-- Compare by relative error with an absolute floor at unit scale. Reordered
+-- floating-point operations can cancel to a residue near the rounding error of
+-- their unit-scale operands, even when the reference result is exactly zero.
 equiv :: Double -> Exp Double -> Exp Double -> Property
 equiv eps (ConstE x) (ConstE y)
   | any nonfinite [eps, x', y'] || eps <= 0 = property False
-  | d == 0                                  = property True
-  | otherwise                               = property $ n / d < eps
+  | otherwise                               = property $ n < eps * max 1 d
   where
     x' = fromConst x
     y' = fromConst y

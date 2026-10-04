@@ -149,6 +149,8 @@
 - Correct relative-error comparisons of negative values and explicitly compare
   zeros, NaNs, and signed infinities. Add regressions for these comparison
   policies.
+- Give the simplification evaluation property an absolute tolerance floor at
+  unit scale, so rounding residue beside an exact zero does not fail it.
 - Normalize the package version to `0.1.0.0`, add the issue tracker URL, and
   include this changelog, the guide, and supporting development files in source
   distributions.
