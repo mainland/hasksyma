@@ -110,10 +110,8 @@ instance PrettyTeX Bool where
     tppr True  = mathfrak "T"
     tppr False = mathfrak "F"
 
-tpprSignedIntegral :: (Integral a, Show a) => a -> LaTeX
-tpprSignedIntegral x
-    | x < 0     = "-" <> tpprSignedIntegral (-x)
-    | otherwise = (fromString . show) x
+tpprSignedIntegral :: Integral a => a -> LaTeX
+tpprSignedIntegral = fromString . show . toInteger
 
 tpprRealFloat :: (RealFloat a, Show a) => a -> LaTeX
 tpprRealFloat x

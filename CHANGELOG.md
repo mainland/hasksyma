@@ -79,6 +79,7 @@
 
 - Preserve negative fractional signs in LaTeX output, including complex
   imaginary components.
+- Avoid overflow when rendering the minimum `Int` as LaTeX.
 - Document ordinary simplification as algebraic rewriting that may extend the
   source domain. It cancels matching opposite terms and quotient factors and
   reduces zero products and numerators without recording exclusions. Known-zero
