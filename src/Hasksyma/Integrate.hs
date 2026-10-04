@@ -58,6 +58,13 @@ data Factors a = F
 -- domain and branch assumptions before that combination is valid.
 -- Integer factor cancellation still uses formal algebra and does not track
 -- excluded points or guarantee preservation of floating-point exceptions.
+--
+-- Collect exact rational coefficients without approximation. Other exact
+-- constants, including nonzero multiples of pi, Euler's number, and irrational
+-- cyclotomic values, remain symbolic bases. Their integer powers are retained
+-- in the factor exponents. Known-zero bases with negative exponents also stay
+-- symbolic. Rational coefficients may use 'RationalC' rather than their
+-- original constant constructor.
 factorize :: forall a . (Eq a, Floating a, Floating (Const a), IsConst a)
           => Exp a               -- ^ Expression to factor
           -> [(Exp a, Const a)] -- ^ Bases and their exponents
@@ -75,7 +82,12 @@ factorize e0 | k0 == 0   = [(0, 1)]
         -> Integer
         -> (Const a, [(Exp a, Const a)])
         -> (Const a, [(Exp a, Const a)])
-    fac (ConstE k) n (k', fs) = (k' * k**fromInteger n, fs)
+    fac e@(ConstE c) n (k, fs)
+      | c == 0 && n < 0 = (k, addFactor e (fromInteger n) fs)
+      | isExact c = case toRationalMaybe c of
+                      Just q  -> (k * fromRational (q ^^ n), fs)
+                      Nothing -> (k, addFactor e (fromInteger n) fs)
+      | otherwise = (k * c ^^ n, fs)
 
     fac (NumUnopE Neg e) n (k, fs) =
       fac e n ((if even n then 1 else -1) * k, fs)

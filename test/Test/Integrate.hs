@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -19,7 +20,7 @@ import           Hasksyma.Const
 import           Hasksyma.Diff      (diff)
 import           Hasksyma.Eval      (eval)
 import           Hasksyma.Exp       (Exp (..), FloatBinop (..), FloatUnop (Tan), FracBinop (..),
-                                     NumBinop (..))
+                                     NumBinop (..), isExactE, sameExp)
 import           Hasksyma.Integrate
 import           Hasksyma.Simplify
 
@@ -46,6 +47,7 @@ integrateTests = do
   integralDependencyTests
   tangentIntegralTests
   logarithmicIntegralTests
+  factorizationRegressionTests
   describe "Factorization" $ do
     describe "Factor division" $ do
       it "retains denominator factors when the numerator represents one" $
@@ -336,8 +338,8 @@ assertIntegral integrand expected =
       let (a, actualFactors) = coefficient (factorize (simplify actual))
           (b, expectedFactors) = coefficient (factorize (simplify expected))
       actualFactors @?= expectedFactors
-      -- The current factorizer may evaluate rational coefficients. Check their
-      -- numerical agreement explicitly, without weakening constant identity.
+      -- Compare evaluated coefficients explicitly, since these examples also
+      -- include powers with already evaluated exponents.
       assertBool ("Coefficient " ++ show a ++ ", expected " ++ show b) $
         not (isNaN a || isInfinite a || isNaN b || isInfinite b)
         && abs (a - b) <= 1e-12 * max 1 (abs b)
@@ -346,6 +348,57 @@ assertIntegral integrand expected =
     coefficient :: [(Exp Double, Const Double)] -> (Double, [(Exp Double, Const Double)])
     coefficient ((ConstE c, 1) : fs) = (fromConst c, fs)
     coefficient fs                   = (1, fs)
+
+factorizationRegressionTests :: Spec
+factorizationRegressionTests = describe "Factorization regressions" $ do
+    forM_ constants $ \(name, c) -> describe name $ do
+      it "retains the exact constant as a symbolic factor" $
+        case factorize (ConstE c) of
+          [(base, power)] -> do
+            sameExp base (ConstE c) @?= True
+            sameConst power (IntegerC 1) @?= True
+          result -> assertFailure $ show result
+      it "preserves exactness through factorization and reconstruction" $
+        forM_ [(ConstE c, fromConst c),
+               (NatPowE (ConstE c) 2, fromConst c ^ (2 :: Integer)),
+               (IntPowE (ConstE c) (-1), recip (fromConst c)),
+               (NumBinopE Mul (ConstE c) (ConstE E), fromConst c * exp 1)] $ \(e, expected) -> do
+          let factors = factorize e
+          assertBool (show factors) (all (\(base, power) -> isExactE base && isExact power) factors)
+          isExactE (unfactorize factors) @?= True
+          assertFactorizationValue expected e
+      it "retains exact constants in a variable-dependent antiderivative" $
+        case heuristicIntegrate (NumBinopE Mul (ConstE c) x) "x" :: Maybe (Exp Double) of
+          Just result -> do
+            isExactE result @?= True
+            assertIntegral (NumBinopE Mul (ConstE c) x) (ConstE c * NatPowE x 2 / 2)
+          Nothing -> assertFailure "No antiderivative"
+    it "collects rational coefficients without approximation" $ do
+      let e = NumBinopE Mul (ConstE (RationalC (2/3))) (IntPowE (ConstE (IntegerC 2)) (-2)) :: Exp Double
+      case factorize e of
+        [(ConstE c, power)] -> do
+          isExact c @?= True
+          c @?= RationalC (1/6)
+          sameConst power (IntegerC 1) @?= True
+        result -> assertFailure $ show result
+      isExactE (unfactorize (factorize e)) @?= True
+    it "retains a known-zero base with a negative exponent" $
+      factorize (IntPowE 0 (-1) :: Exp Double) @?= [(0, -1)]
+#if defined(CYCLOTOMIC)
+    it "preserves exact complex cyclotomic factors" $ do
+      let c = sqrt (IntegerC (-1)) :: Const (Complex Double)
+          e = NumBinopE Mul (ConstE c) (VarE "z")
+      isExactE (unfactorize (factorize e)) @?= True
+#endif
+  where
+    x :: Exp Double
+    x = VarE "x"
+
+    constants :: [(String, Const Double)]
+    constants = [("Euler's number", E), ("Pi", Pi 1), ("A negative pi multiple", Pi (-2))]
+#if defined(CYCLOTOMIC)
+                ++ [("An exact real radical", sqrt (IntegerC 2))]
+#endif
 
 assertFactorizationValue :: Double -> Exp Double -> Assertion
 assertFactorizationValue expected e =

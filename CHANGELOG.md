@@ -82,6 +82,9 @@
 - Avoid overflow when rendering the minimum `Int` as LaTeX.
 - Render floating infinities explicitly in LaTeX and handle NaNs before
   integral conversion.
+- Preserve exact rational coefficients and symbolic irrational constants during
+  factorization and heuristic integration. Factor lists retain irrational
+  constants as bases, and rational coefficients may use `RationalC`.
 - Document ordinary simplification as algebraic rewriting that may extend the
   source domain. It cancels matching opposite terms and quotient factors and
   reduces zero products and numerators without recording exclusions. Known-zero
