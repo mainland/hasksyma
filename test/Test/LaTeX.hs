@@ -33,6 +33,15 @@ latexTests = describe "LaTeX numeric rendering regressions" $ do
       latex (-2 :: Double) `shouldBe` "$-2$"
       latex (0.5 :: Double) `shouldBe` "$0.50000$"
       latex (-0.0 :: Double) `shouldBe` "$0$"
+    it "renders signed Float infinities explicitly" $ do
+      latex (1/0 :: Float) `shouldBe` "$\\infty$"
+      latex (-1/0 :: Float) `shouldBe` "$-\\infty$"
+    it "renders signed Double infinities explicitly" $ do
+      latex (1/0 :: Double) `shouldBe` "$\\infty$"
+      latex (-1/0 :: Double) `shouldBe` "$-\\infty$"
+    it "renders NaNs without integral conversion" $ do
+      latex (0/0 :: Float) `shouldBe` "$NaN$"
+      latex (0/0 :: Double) `shouldBe` "$NaN$"
 
 latex :: PrettyTeX a => a -> String
 latex = prettyCompact . ppr . tppr

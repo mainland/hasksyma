@@ -10,6 +10,8 @@
 --
 -- Precedence-aware LaTeX rendering independent of notebook support.
 -- The @displayMath@ helper has moved to "Hasksyma.IHaskell" in the public @hasksyma:ihaskell@ sublibrary.
+-- Float and Double infinities render as signed @\\infty@, and NaNs render
+-- as @NaN@. Floating signed zeros both render as @0@.
 
 module Hasksyma.LaTeX
     ( PrettyTeX(..),
@@ -42,7 +44,7 @@ import           Text.LaTeX                      (IsString (fromString), LaTeX, 
 #if defined(CYCLOTOMIC)
 import           Text.LaTeX                      (zeta, (!^))
 #endif /* defined(CYCLOTOMIC) */
-import           Text.LaTeX.Base.Class           (LaTeXC, comm1)
+import           Text.LaTeX.Base.Class           (LaTeXC, comm1, commS)
 import           Text.LaTeX.Packages.AMSFonts    (mathfrak)
 import           Text.PrettyPrint.Mainland       (strictText)
 import           Text.PrettyPrint.Mainland.Class (Pretty (ppr))
@@ -115,6 +117,8 @@ tpprSignedIntegral = fromString . show . toInteger
 
 tpprRealFloat :: (RealFloat a, Show a) => a -> LaTeX
 tpprRealFloat x
+    | isNaN x      = "NaN"
+    | isInfinite x = (if x < 0 then "-" else mempty) <> commS "infty"
     | isIntegral x = tppr (ceiling x :: Integer)
     | x < 0        = "-" <> fromString (showFloat (-x))
     | otherwise    = fromString $ showFloat x
