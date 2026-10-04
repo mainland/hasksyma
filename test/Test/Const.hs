@@ -42,30 +42,26 @@ instance Equiv Integer where
 instance Equiv Rational where
 
 instance Equiv Float where
-    x `equiv` y
-       | x == 0    = property $ x == y
-       | otherwise = counterexample ("abs (" ++ show x ++ " - " ++ show y ++ ")/" ++ show x ++ " == " ++ show diff) (diff < eps)
-      where
-        x', y' :: Rational
-        x' = toRational x
-        y' = toRational y
-
-        diff, eps :: Float
-        diff = fromRational (abs (x' - y') / max x' y')
-        eps = 1e-3
+    equiv = floatingEquiv 1e-3
 
 instance Equiv Double where
-    x `equiv` y
-       | x == 0    = property $ x == y
-       | otherwise = counterexample ("abs (" ++ show x ++ " - " ++ show y ++ ")/" ++ show x ++ " == " ++ show diff) (diff < eps)
-      where
-        x', y' :: Rational
-        x' = toRational x
-        y' = toRational y
+    equiv = floatingEquiv 1e-11
 
-        diff, eps :: Float
-        diff = fromRational (abs (x' - y') / max x' y')
-        eps = 1e-11
+-- Compare finite nonzero values by relative error, using exact binary
+-- rationals to avoid overflow and underflow in the comparison itself.
+-- Zeros must agree exactly. NaNs match only NaNs, and infinities must have
+-- matching signs. These exceptional cases never enter rational conversion.
+floatingEquiv :: (RealFloat a, Show a) => Rational -> a -> a -> Property
+floatingEquiv eps x y
+    | isNaN x || isNaN y = counterexample (show (x, y)) (isNaN x && isNaN y)
+    | isInfinite x || isInfinite y = x === y
+    | x == 0 || y == 0 = x === y
+    | otherwise = counterexample ("Relative error for " ++ show (x, y) ++ ": " ++ show diff) (diff < eps)
+  where
+    x', y', diff :: Rational
+    x' = toRational x
+    y' = toRational y
+    diff = abs (x' - y') / max (abs x') (abs y')
 
 data NumBinop = NumBinop String (forall a . Num a => a -> a -> a)
 
@@ -145,6 +141,9 @@ prop_float2_equiv _ (FloatBinop _ f p) x y = p (fromConst x) (fromConst y) ==> f
 
 constTests :: Spec
 constTests = describe "Computations with constants" $ do
+    describe "Numerical comparison regressions" $ do
+      describe "Float" $ comparisonTests (Proxy :: Proxy Float)
+      describe "Double" $ comparisonTests (Proxy :: Proxy Double)
     describe "Constant projections" $ do
       it "converts zero multiples of pi without approximation" $ do
         toRational (Pi 0 :: Const Double) `shouldBe` 0
@@ -418,6 +417,34 @@ constTests = describe "Computations with constants" $ do
         property $ prop_float2_equiv (Proxy :: Proxy Float)
     it "Binary Floating operations over Double correct" $
         property $ prop_float2_equiv (Proxy :: Proxy Double)
+
+comparisonTests :: forall a proxy . (RealFloat a, Equiv a) => proxy a -> Spec
+comparisonTests _ =
+    forM_ cases $ \(name, x, y, expected) -> it name $ do
+      result <- quickCheckWithResult stdArgs { chatty = False, maxSuccess = 1 } (x `equiv` y)
+      case result of
+        Success{}                       -> expected `shouldBe` True
+        Failure{theException = Nothing} -> expected `shouldBe` False
+        _                               -> expectationFailure $ show result
+  where
+    cases :: [(String, a, a, Bool)]
+    cases =
+      [ ("rejects unequal negative values", -1, -1000, False)
+      , ("rejects unequal negative values in reverse order", -1000, -1, False)
+      , ("rejects opposite signs", -1, 1, False)
+      , ("accepts identical negative values", -1, -1, True)
+      , ("accepts nearby negative values", -1, -(1+1e-12), True)
+      , ("accepts signed zeros", 0, -0.0, True)
+      , ("rejects zero compared with a nonzero value", 0, 1e-20, False)
+      , ("rejects a nonzero value compared with zero", 1e-20, 0, False)
+      , ("accepts matching NaNs", 0/0, 0/0, True)
+      , ("rejects a NaN compared with a finite value", 0/0, 1, False)
+      , ("rejects a finite value compared with a NaN", 1, 0/0, False)
+      , ("accepts matching positive infinities", 1/0, 1/0, True)
+      , ("accepts matching negative infinities", -1/0, -1/0, True)
+      , ("rejects opposite infinities", 1/0, -1/0, False)
+      , ("rejects an infinite value compared with a finite value", 1/0, 1, False)
+      ]
 
 integerSqrtTests :: forall a proxy . (Eq a, Num a, IsConst a, Floating (Const a))
                  => proxy a -> Spec

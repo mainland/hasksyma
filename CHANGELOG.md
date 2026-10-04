@@ -131,6 +131,9 @@
   a MkDocs guide, and CI for supported compilers and optional configurations.
   Repair numerical test helpers so unknown values and exceptional results do
   not silently pass comparisons.
+- Correct relative-error comparisons of negative values and explicitly compare
+  zeros, NaNs, and signed infinities. Add regressions for these comparison
+  policies.
 - Normalize the package version to `0.1.0.0`, add the issue tracker URL, and
   include this changelog, the guide, and supporting development files in source
   distributions.
