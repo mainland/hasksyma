@@ -118,7 +118,7 @@ tpprSignedIntegral x
 tpprRealFloat :: (RealFloat a, Show a) => a -> LaTeX
 tpprRealFloat x
     | isIntegral x = tppr (ceiling x :: Integer)
-    | x < 0        = fromString $ showFloat (-x)
+    | x < 0        = "-" <> fromString (showFloat (-x))
     | otherwise    = fromString $ showFloat x
 
 isIntegral :: RealFrac a => a -> Bool

@@ -77,6 +77,8 @@
 
 ### Evaluation, simplification, and integration
 
+- Preserve negative fractional signs in LaTeX output, including complex
+  imaginary components.
 - Document ordinary simplification as algebraic rewriting that may extend the
   source domain. It cancels matching opposite terms and quotient factors and
   reduces zero products and numerators without recording exclusions. Known-zero

@@ -16,6 +16,7 @@ import           Test.Diff
 import           Test.Eval
 import           Test.Exact
 import           Test.Integrate
+import           Test.LaTeX
 #if !defined(PEVAL)
 import           Test.NoPEval
 #else
@@ -38,6 +39,7 @@ spec = do
     checkedSimplifyTests
     diffTests
     integrateTests
+    latexTests
     rootTests
 #if defined(PEVAL)
     powPevalTests
